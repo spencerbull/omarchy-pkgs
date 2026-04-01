@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Spencer Bull <spencerbull@users.noreply.github.com>
+Date: Tue, 31 Mar 2026 14:00:00 +0000
+Subject: [PATCH] drm/i915/psr: handle Panel Replay full-line x granularity
+
+DP specifies that Panel Replay selective-update X granularity value
+0xffff means full-line granularity. v6.19 treats the raw value as a
+literal width, which can mis-handle Panel Replay selective update on
+panels that advertise full-line updates this way.
+
+Translate the sentinel to the current horizontal display width before
+running the granularity check.
+
+Adapted from upstream commit a99cac460dde (drm/i915/psr: Fix for
+Panel Replay X granularity DPCD register handling).
+---
+ drivers/gpu/drm/i915/display/intel_psr.c | 5 +++++
+ include/drm/display/drm_dp.h             | 1 +
+ 2 files changed, 6 insertions(+)
+
+--- a/drivers/gpu/drm/i915/display/intel_psr.c
++++ b/drivers/gpu/drm/i915/display/intel_psr.c
+@@ -1312,9 +1312,12 @@
+ 	const int crtc_hdisplay = crtc_state->hw.adjusted_mode.crtc_hdisplay;
+ 	const int crtc_vdisplay = crtc_state->hw.adjusted_mode.crtc_vdisplay;
+ 	u16 y_granularity = 0;
++	u16 sink_w_granularity = intel_dp->psr.su_w_granularity ==
++		DP_PANEL_REPLAY_FULL_LINE_GRANULARITY ?
++		crtc_hdisplay : intel_dp->psr.su_w_granularity;
+ 
+ 	/* PSR2 HW only send full lines so we only need to validate the width */
+-	if (crtc_hdisplay % intel_dp->psr.su_w_granularity)
++	if (crtc_hdisplay % sink_w_granularity)
+ 		return false;
+ 
+ 	if (crtc_vdisplay % intel_dp->psr.su_y_granularity)
+--- a/include/drm/display/drm_dp.h
++++ b/include/drm/display/drm_dp.h
+@@ -572,6 +572,7 @@
+ 
+ #define DP_PANEL_REPLAY_CAP_X_GRANULARITY		0xb2
+ #define DP_PANEL_REPLAY_CAP_Y_GRANULARITY		0xb4
++#define DP_PANEL_REPLAY_FULL_LINE_GRANULARITY		0xffff
+ 
+ /* Link Configuration */
+ #define	DP_LINK_BW_SET		            0x100

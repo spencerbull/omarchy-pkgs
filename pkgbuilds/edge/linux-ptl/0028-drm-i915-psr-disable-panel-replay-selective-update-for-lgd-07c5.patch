@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Spencer Bull <spencerbull@users.noreply.github.com>
+Date: Wed, 1 Apr 2026 10:10:00 +0000
+Subject: [PATCH] drm/i915/psr: disable Panel Replay selective update for LGD
+ 07C5
+
+The LG Display 0x07C5 OLED panel used in Dell XPS Panther Lake systems
+advertises Panel Replay selective update with DSC, but on current i915/Xe
+stacks it still produces persistent sink-side PANEL-REPLAY Link CRC errors
+and visible jitter even after the upstream selective-update backports.
+
+Keep Panel Replay available on this panel, but force it to the full-frame
+path when DSC is enabled by rejecting selective update for this specific
+EDID panel ID.
+---
+ drivers/gpu/drm/i915/display/intel_psr.c | 24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+--- a/drivers/gpu/drm/i915/display/intel_psr.c
++++ b/drivers/gpu/drm/i915/display/intel_psr.c
+@@ -23,6 +23,7 @@
+ #include <linux/debugfs.h>
+ 
+ #include <drm/drm_atomic_helper.h>
++#include <drm/drm_edid.h>
+ #include <drm/drm_damage_helper.h>
+ #include <drm/drm_debugfs.h>
+ #include <drm/drm_print.h>
+@@ -622,6 +623,24 @@ static void _panel_replay_init_dpcd(struct intel_dp *intel_dp)
+ 		    panel_replay_dsc_support_str(intel_dp->psr.sink_panel_replay_dsc_support));
+ }
+ 
++static bool intel_psr_is_lgd_07c5_panel(struct intel_dp *intel_dp)
++{
++	struct intel_connector *connector = intel_dp->attached_connector;
++	const struct drm_edid *drm_edid;
++
++	if (!connector)
++		return false;
++
++	drm_edid = connector->panel.fixed_edid;
++	if (!drm_edid || IS_ERR(drm_edid))
++		drm_edid = connector->detect_edid;
++
++	if (!drm_edid || IS_ERR(drm_edid))
++		return false;
++
++	return drm_edid_get_panel_id(drm_edid) == drm_edid_encode_panel_id('L', 'G', 'D', 0x07C5);
++}
++
+ static void _psr_init_dpcd(struct intel_dp *intel_dp)
+ {
+ 	struct intel_display *display = to_intel_display(intel_dp);
+@@ -1654,6 +1673,12 @@ static bool intel_sel_update_config_valid(struct intel_dp *intel_dp,
+ 		if (!intel_dp->psr.sink_panel_replay_su_support)
+ 			goto unsupported;
+ 
++		if (intel_dsc_enabled_on_link(crtc_state) && intel_psr_is_lgd_07c5_panel(intel_dp)) {
++			drm_dbg_kms(display->drm,
++				    "Selective update with Panel Replay disabled for LGD 07C5 panel when DSC is enabled\n");
++			goto unsupported;
++		}
++
+ 		if (intel_dsc_enabled_on_link(crtc_state) &&
+ 		    intel_dp->psr.sink_panel_replay_dsc_support !=
+ 		    INTEL_DP_PANEL_REPLAY_DSC_SELECTIVE_UPDATE) {
+ 			drm_dbg_kms(display->drm,
+ 				    "Selective update with Panel Replay not enabled because it's not supported with DSC\n");
+ 			goto unsupported;
+ 		}
+ 	}

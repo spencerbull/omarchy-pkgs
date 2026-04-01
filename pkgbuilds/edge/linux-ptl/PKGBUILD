@@ -3,7 +3,7 @@
 
 pkgbase=linux-ptl
 pkgver=6.19.9.arch1
-pkgrel=1
+pkgrel=6
 pkgdesc='Linux with Panther Lake hardware backports (SDCA audio, WiFi 7)'
 url='https://github.com/archlinux/linux'
 arch=(
@@ -43,6 +43,16 @@ source=(
   0014-ASoC-SDCA-Limit-values-user-can-write-to-Selected-Mo.patch
   0017-ASoC-SDCA-Fix-NULL-pointer-dereference-in-sdca_jack_.patch
   0018-wifi-iwlwifi-mld-correctly-set-wifi-generation-data.patch
+  0019-drm-edid-populate-monitor-range-from-displayid-adaptive-sync.patch
+  0020-drm-i915-dsc-add-selective-update-register-definitions.patch
+  0021-drm-i915-dsc-add-helper-for-writing-selective-update-et-parameters.patch
+  0022-drm-i915-psr-write-dsc-parameters-on-selective-update-et-mode.patch
+  0023-drm-i915-psr-handle-panel-replay-full-line-x-granularity.patch
+  0024-drm-i915-psr-disable-psr-on-update_m_n-and-update_lrr.patch
+  0025-drm-i915-psr-compute-entry-setup-frames-into-intel_crtc_state.patch
+  0026-drm-i915-dp-compute-as-sdp-after-psr-and-lobf.patch
+  0027-drm-i915-dp-allow-as-sdp-only-if-panel-replay-plus-auxless-alpm-is-supported.patch
+  0028-drm-i915-psr-disable-panel-replay-selective-update-for-lgd-07c5.patch
 )
 source_x86_64=(config.x86_64)
 validpgpkeys=(
@@ -55,7 +65,8 @@ b2sums=('6be41037c5b18e9a8d1c58fdd613e37bb5c841b7f43baf95516f3dda461adc6eb20da03
         'edc6d11f32f16a53e520b53b52be690d192c0a64153419cbba65e4a2c0f426ce76ab2c10dbddd7f82f2c407c071039b05018796cf2b8ba501d46e3a259146ced'
         'SKIP'
         'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
-        'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+        'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
+        'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 b2sums_x86_64=('cab93bd983d92e2fc6047bfaa3fc3b52fbd23272aef4aaa10500ac0ac26847c1bbdfdb13a6f64ad7689166109b99a078580bf43a02aaf9f2be0ae8885a87ffc8')
 
 # https://www.kernel.org/pub/linux/kernel/v6.x/sha256sums.asc
@@ -64,7 +75,8 @@ sha256sums=('c16068a3af12e3943dee3b1eef57ca70229c069128bfa1184fb3f48b219d55bf'
             'dacb94dc3be57fc442995a3d3d1519775d3f6877a4e2fec437223d95e318f04b'
             'SKIP'
             'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
-            'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+            'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
+            'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 export KBUILD_BUILD_HOST=archlinux
 export KBUILD_BUILD_USER=$pkgbase

@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Spencer Bull <spencerbull@users.noreply.github.com>
+Date: Tue, 31 Mar 2026 23:25:00 +0000
+Subject: [PATCH] drm/i915/dp: allow AS-SDP only if panel replay plus auxless
+ ALPM is supported
+
+Adaptive Sync SDP is required when Panel Replay is active and for VRR on
+PCON. On this path we only want to emit AS-SDP when the sink can actually
+use it for Panel Replay with auxless ALPM.
+
+Also set the fixed-vtotal AS-SDP mode when VRR is off.
+
+Adapted from upstream intel-gfx patch series by Ankit Nautiyal.
+---
+ drivers/gpu/drm/i915/display/intel_dp.c | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+--- a/drivers/gpu/drm/i915/display/intel_dp.c
++++ b/drivers/gpu/drm/i915/display/intel_dp.c
+@@ -2935,7 +2935,15 @@ static void intel_dp_compute_as_sdp(struct intel_dp *intel_dp,
+ 	const struct drm_display_mode *adjusted_mode =
+ 		&crtc_state->hw.adjusted_mode;
+ 
+-	if (!crtc_state->vrr.enable || !intel_dp->as_sdp_supported)
++	if (!intel_dp->as_sdp_supported)
++		return;
++
++	/*
++	 * Support Adaptive-Sync SDP only for Panel Replay + auxless ALPM for
++	 * now. It can also be used for PCON + VRR, but that path is not handled
++	 * in this kernel yet.
++	 */
++	if (!CAN_PANEL_REPLAY(intel_dp) || !intel_alpm_aux_less_wake_supported(intel_dp))
+ 		return;
+ 
+ 	crtc_state->infoframes.enable |= intel_hdmi_infoframe_enable(DP_SDP_ADAPTIVE_SYNC);
+@@ -2949,9 +2957,10 @@ static void intel_dp_compute_as_sdp(struct intel_dp *intel_dp,
+ 		as_sdp->mode = DP_AS_SDP_FAVT_TRR_REACHED;
+ 		as_sdp->target_rr = drm_mode_vrefresh(adjusted_mode);
+ 		as_sdp->target_rr_divider = true;
+-	} else {
++	} else if (crtc_state->vrr.enable) {
+ 		as_sdp->mode = DP_AS_SDP_AVT_DYNAMIC_VTOTAL;
+-		as_sdp->target_rr = 0;
++	} else {
++		as_sdp->mode = DP_AS_SDP_AVT_FIXED_VTOTAL;
+ 	}
+ }

@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Spencer Bull <spencerbull@users.noreply.github.com>
+Date: Tue, 31 Mar 2026 23:20:00 +0000
+Subject: [PATCH] drm/i915/dp: compute AS-SDP after PSR and LOBF
+
+To enable Adaptive Sync SDP support for Panel Replay with link-on and
+auxless ALPM, the AS-SDP state needs to be computed after PSR and LOBF
+configuration has settled.
+
+Adapted from upstream intel-gfx patch series by Ankit Nautiyal.
+---
+ drivers/gpu/drm/i915/display/intel_dp.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/drivers/gpu/drm/i915/display/intel_dp.c
++++ b/drivers/gpu/drm/i915/display/intel_dp.c
+@@ -3608,9 +3608,9 @@ intel_dp_compute_config(struct intel_encoder *encoder,
+ 		pipe_config->dp_m_n.data_m *= pipe_config->splitter.link_count;
+ 
+ 	intel_vrr_compute_config(pipe_config, conn_state);
+-	intel_dp_compute_as_sdp(intel_dp, pipe_config);
+ 	intel_psr_compute_config(intel_dp, pipe_config, conn_state);
+ 	intel_alpm_lobf_compute_config(intel_dp, pipe_config, conn_state);
++	intel_dp_compute_as_sdp(intel_dp, pipe_config);
+ 	intel_dp_drrs_compute_config(connector, pipe_config, link_bpp_x16);
+ 	intel_dp_compute_vsc_sdp(intel_dp, pipe_config, conn_state);
+ 	intel_dp_compute_hdr_metadata_infoframe_sdp(intel_dp, pipe_config, conn_state);
