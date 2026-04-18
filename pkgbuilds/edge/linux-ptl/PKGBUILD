@@ -3,7 +3,7 @@
 
 pkgbase=linux-ptl
 pkgver=6.19.10.arch1
-pkgrel=2
+pkgrel=3
 pkgdesc='Linux with Panther Lake hardware backports (SDCA audio, WiFi 7, PSR2, Panel Replay SU)'
 url='https://github.com/archlinux/linux'
 arch=(
@@ -47,9 +47,9 @@ source=(
   0019-drm-i915-psr-accept-early-transport-for-psr2.patch
   0020-drm-i915-psr-fix-su-granularity-source-for-psr2.patch
   0022-drm-i915-psr-allow-psr-with-vrr-on-ptl.patch
-  0024-psr-exit-bypass-for-panel-replay.patch
-  0025-fix-panel-replay-cursor.patch
   0026-drm-i915-psr-handle-Panel-Replay-full-line-SU-granul.patch
+  0027-drm-i915-trans-push-frame-change-for-panel-replay.patch
+  0028-drm-i915-psr-exit-Panel-Replay-for-ALPM-lag.patch
 )
 source_x86_64=(config.x86_64)
 validpgpkeys=(
@@ -64,7 +64,7 @@ b2sums=('f91cdd0b8727ce50ba286b321e85f394ff7e2eff27cde6e6e85e8abfc627b2b069bb567
         'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
         'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
         'SKIP' 'SKIP' 'SKIP' 'SKIP')
-b2sums_x86_64=('0fe195286246b83f0859f79dd2f6c633f5370057aa6afad4525309822ade855f7f6ebcfb01109786313c9331ad61d667b0257ecc7b7f239d2f962c9d34f0b10d')
+b2sums_x86_64=('9742088ab0381d8196046e42e8acb4ce01ea77461fada77dc90d197e859631e73b06ead4d512f15ab619b33ebad7bca58a10d4506d66916a99c40f9f52708a53')
 
 # https://www.kernel.org/pub/linux/kernel/v6.x/sha256sums.asc
 sha256sums=('466d441a0ea5e04b7023618b7b201bfd60effab225f806fd41ce663484395a1c'
