@@ -31,24 +31,9 @@ source=(
   https://cdn.kernel.org/pub/linux/kernel/v${pkgver%%.*}.x/${_srcname}.tar.{xz,sign}
   $url/releases/download/$_srctag/linux-$_srctag.patch.zst{,.sig}
   # Linux 7 prune plan: see LINUX7-BACKPORT-AUDIT.md
-  0001-ASoC-SDCA-functions-Fix-confusing-cleanup.h-syntax.patch
-  0002-ASoC-SDCA-Add-ASoC-jack-hookup-in-class-driver.patch
-  0003-ASoC-SDCA-Replace-use-of-system_wq-with-system_dfl_w.patch
-  0004-ASoC-SDCA-Add-SDCA-IRQ-enable-disable-helpers.patch
-  0005-ASoC-SDCA-Add-basic-system-suspend-support.patch
-  0007-ASoC-SDCA-Add-lock-to-serialise-the-Function-initial.patch
-  0008-ASoC-SDCA-Tidy-up-some-memory-allocations.patch
-  0010-ASoC-SDCA-Add-NO_DIRECT_COMPLETE-flag-to-class-drive.patch
-  0012-ASoC-SDCA-Rearrange-FDL-file-messages.patch
-  0013-ASoC-SDCA-Add-regmap-defaults-for-specification-defi.patch
-  0014-ASoC-SDCA-Limit-values-user-can-write-to-Selected-Mo.patch
   0017-ASoC-SDCA-Fix-NULL-pointer-dereference-in-sdca_jack_.patch
-  0018-wifi-iwlwifi-mld-correctly-set-wifi-generation-data.patch
   0019-drm-i915-psr-accept-early-transport-for-psr2.patch
-  0020-drm-i915-psr-fix-su-granularity-source-for-psr2.patch
   0022-drm-i915-psr-allow-psr-with-vrr-on-ptl.patch
-  0026-drm-i915-psr-handle-Panel-Replay-full-line-SU-granul.patch
-  0027-drm-i915-trans-push-frame-change-for-panel-replay.patch
   0028-drm-i915-psr-exit-Panel-Replay-for-ALPM-lag.patch
   0029-drm-edid-populate-monitor-range-from-displayid-adaptive-sync.patch
 )
@@ -62,9 +47,7 @@ b2sums=('f91cdd0b8727ce50ba286b321e85f394ff7e2eff27cde6e6e85e8abfc627b2b069bb567
         'SKIP'
         '9632ace64efb38ee784d731ea85aeb285f0c3db486112122c17059c359c490a54c6ef7cd9d1d1cdecc8ae1d43df94536890b83a6671c1166a6b2148308f1baf3'
         'SKIP'
-        'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
-        'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
-        'SKIP' 'SKIP' 'SKIP' 'SKIP')
+        'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 b2sums_x86_64=('9742088ab0381d8196046e42e8acb4ce01ea77461fada77dc90d197e859631e73b06ead4d512f15ab619b33ebad7bca58a10d4506d66916a99c40f9f52708a53')
 
 # https://www.kernel.org/pub/linux/kernel/v6.x/sha256sums.asc
@@ -72,9 +55,7 @@ sha256sums=('466d441a0ea5e04b7023618b7b201bfd60effab225f806fd41ce663484395a1c'
             'SKIP'
             '96410b474e9b3efc2e03e5bb8e3819f41313e943f2157c215094668200cb069d'
             'SKIP'
-            'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
-            'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
-            'SKIP' 'SKIP' 'SKIP' 'SKIP')
+            'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 export KBUILD_BUILD_HOST=archlinux
 export KBUILD_BUILD_USER=$pkgbase
