@@ -30,6 +30,7 @@ _srctag=v${pkgver%.*}-${pkgver##*.}
 source=(
   https://cdn.kernel.org/pub/linux/kernel/v${pkgver%%.*}.x/${_srcname}.tar.{xz,sign}
   $url/releases/download/$_srctag/linux-$_srctag.patch.zst{,.sig}
+  # Linux 7 prune plan: see LINUX7-BACKPORT-AUDIT.md
   0001-ASoC-SDCA-functions-Fix-confusing-cleanup.h-syntax.patch
   0002-ASoC-SDCA-Add-ASoC-jack-hookup-in-class-driver.patch
   0003-ASoC-SDCA-Replace-use-of-system_wq-with-system_dfl_w.patch
