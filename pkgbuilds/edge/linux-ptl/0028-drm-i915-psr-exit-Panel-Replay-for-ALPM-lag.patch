@@ -30,14 +30,16 @@ subjectively identical in smoothness to longer delays.
 
 Repurpose the existing dc3co_work delayed_work as the re-entry timer:
 each frontbuffer_flush cancels+rearms it to 50 ms, and the work
-handler calls intel_psr_activate() when it fires.
+handler calls intel_psr_activate() when it fires. The re-entry path uses
+the same active/busy/pause/idle guards as normal PSR delayed activation
+so it cannot race an explicit pause/resume cycle.
 
 Signed-off-by: Gaggery Tsai <gaggery.tsai@intel.com>
 ---
  drivers/gpu/drm/i915/display/intel_frontbuffer.c |  1 +
- drivers/gpu/drm/i915/display/intel_psr.c         | 33 ++++++++++++++++++
+ drivers/gpu/drm/i915/display/intel_psr.c         | 49 ++++++++++++++++++++++++++
  drivers/gpu/drm/i915/display/intel_psr.h         |  1 +
- 3 files changed, 35 insertions(+)
+ 3 files changed, 51 insertions(+)
 
 --- a/drivers/gpu/drm/i915/display/intel_frontbuffer.c
 +++ b/drivers/gpu/drm/i915/display/intel_frontbuffer.c
@@ -61,22 +63,35 @@ Signed-off-by: Gaggery Tsai <gaggery.tsai@intel.com>
  		     enum fb_op_origin origin);
 --- a/drivers/gpu/drm/i915/display/intel_psr.c
 +++ b/drivers/gpu/drm/i915/display/intel_psr.c
-@@ -1189,6 +1189,8 @@ static void tgl_psr2_disable_dc3co(struct intel_dp *intel_dp)
+@@ -1189,6 +1189,9 @@ static void tgl_psr2_disable_dc3co(struct intel_dp *intel_dp)
  	intel_display_power_set_target_dc_state(display, DC_STATE_EN_UPTO_DC6);
  	psr2_program_idle_frames(intel_dp, psr_compute_idle_frames(intel_dp));
  }
 +
 +static void intel_psr_activate(struct intel_dp *intel_dp);
++static bool __psr_wait_for_idle_locked(struct intel_dp *intel_dp);
  
  static void tgl_dc3co_disable_work(struct work_struct *work)
  {
-@@ -1203,6 +1205,13 @@ static void tgl_dc3co_disable_work(struct work_struct *work)
+@@ -1203,6 +1206,25 @@ static void tgl_dc3co_disable_work(struct work_struct *work)
  	if (delayed_work_pending(&intel_dp->psr.dc3co_work))
  		goto unlock;
  
 +	/* Panel Replay ALPM cursor-lag workaround re-activation path. */
 +	if (intel_dp->psr.panel_replay_enabled &&
-+	    intel_dp->psr.enabled && !intel_dp->psr.active) {
++	    intel_dp->psr.enabled && !intel_dp->psr.active &&
++	    !intel_dp->psr.pause_counter &&
++	    !intel_dp->psr.busy_frontbuffer_bits &&
++	    !READ_ONCE(intel_dp->psr.irq_aux_error)) {
++		if (!__psr_wait_for_idle_locked(intel_dp))
++			goto unlock;
++
++		if (READ_ONCE(intel_dp->psr.irq_aux_error) ||
++		    delayed_work_pending(&intel_dp->psr.dc3co_work) ||
++		    intel_dp->psr.active ||
++		    intel_dp->psr.busy_frontbuffer_bits)
++			goto unlock;
++
 +		intel_psr_activate(intel_dp);
 +		goto unlock;
 +	}
