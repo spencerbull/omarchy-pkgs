@@ -1,22 +1,22 @@
 # Maintainer: Ryan Hughes <ryan@omarchy.org>
 
 pkgname=omarchy-zsh
-pkgver=1.3.0
+pkgver=1.4.0
 pkgrel=1
 pkgdesc="Omarchy shell configuration for Zsh"
 arch=('any')
 url="https://github.com/omacom-io/omarchy-zsh"
 license=('MIT')
-depends=('zsh' 'eza' 'mise' 'zoxide' 'starship' 'fzf' 'fd' 'bat')
+depends=('zsh' 'eza' 'mise' 'zoxide' 'starship' 'fzf' 'fd' 'bat' 'zsh-autosuggestions' 'zsh-syntax-highlighting')
 options=('!debug')
 install=omarchy-zsh.install
-source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/heads/master.tar.gz"
+source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
         "omadots.tar.gz::https://github.com/omacom-io/omadots/archive/refs/heads/master.tar.gz")
-sha256sums=('SKIP'
+sha256sums=('45294dc2cdebfc10086518d39276720bb3f55e74728ae31819a3ea61d998e8f5'
             'SKIP')
 
 package() {
-  cd "${srcdir}/${pkgname}-master"
+  cd "${srcdir}/${pkgname}-${pkgver}"
 
   # Install shared shell config from omadots (aliases, functions, envs, inits, inputrc)
   install -dm755 "${pkgdir}/usr/share/${pkgname}/shell"
@@ -27,6 +27,11 @@ package() {
 
   # Install zsh-specific zoptions from omarchy-zsh
   cp shell/zoptions "${pkgdir}/usr/share/${pkgname}/shell/"
+
+  # Install zsh completions to the standard site-functions dir so they
+  # autoload via the default fpath. compinit is invoked from zoptions.
+  install -dm755 "${pkgdir}/usr/share/zsh/site-functions"
+  cp shell/completions/* "${pkgdir}/usr/share/zsh/site-functions/"
 
   # Install templates and documentation
   install -dm755 "${pkgdir}/usr/share/${pkgname}"
