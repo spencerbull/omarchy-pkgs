@@ -2,7 +2,7 @@
 # Based on Arch Linux linux package by Jan Alexander Steffens (heftig)
 
 pkgbase=linux-ptl
-pkgver=7.0.2.arch1
+pkgver=7.0.3.arch1
 pkgrel=1
 pkgdesc='Linux with Panther Lake hardware backports (SDCA audio, PSR2, Panel Replay SU)'
 url='https://github.com/archlinux/linux'
@@ -52,7 +52,7 @@ b2sums=('SKIP'
 b2sums_x86_64=('9742088ab0381d8196046e42e8acb4ce01ea77461fada77dc90d197e859631e73b06ead4d512f15ab619b33ebad7bca58a10d4506d66916a99c40f9f52708a53')
 
 # https://www.kernel.org/pub/linux/kernel/v7.x/sha256sums.asc
-sha256sums=('53591a03294527a48ccb0b9e559e922df8a38554745a1206827ca751d2ca7662'
+sha256sums=('0bedadbf5788693ddebbcc913c893f1a97349af79ddde7144c2a80b401959f1c'
             'SKIP'
             'SKIP'
             'SKIP'
