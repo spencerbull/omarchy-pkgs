@@ -280,7 +280,6 @@ status() {
   printf '%s\n' "custom_start_max=$custom_start_max"
   printf '%s\n' "custom_end_min=$custom_end_min"
   printf '%s\n' "custom_end_max=$custom_end_max"
-  printf '%s\n' 'pending_reboot=0'
 }
 
 # List the policy ids supported by every managed battery.

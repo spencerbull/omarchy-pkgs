@@ -181,10 +181,8 @@ status() {
   local firmware_policy=""
   local firmware_start=""
   local firmware_end=""
-  local pending_reboot=0
 
   bat=$(battery_dir 2>/dev/null || true)
-  [[ -r $ATTRIBUTES_DIR/pending_reboot ]] && pending_reboot=$(<"$ATTRIBUTES_DIR/pending_reboot")
 
   firmware_policy=$(read_current_value_cached PrimaryBattChargeCfg || true)
   firmware_start=$(read_current_value_cached CustomChargeStart || true)
@@ -235,7 +233,6 @@ status() {
   printf '%s\n' "custom_start_max=$custom_start_max"
   printf '%s\n' "custom_end_min=$custom_end_min"
   printf '%s\n' "custom_end_max=$custom_end_max"
-  printf '%s\n' "pending_reboot=$pending_reboot"
 }
 
 # List the built-in policy ids and labels exposed by the firmware.

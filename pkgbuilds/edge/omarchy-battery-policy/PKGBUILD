@@ -1,7 +1,7 @@
 # Maintainer: Spencer Bull <spencer.bull@dell.com>
 pkgname=omarchy-battery-policy
 pkgver=1.0.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Battery charging policy management for Omarchy"
 arch=('any')
 url="https://github.com/basecamp/omarchy"

@@ -129,7 +129,6 @@ read_status() {
   custom_start_max=99
   custom_end_min=1
   custom_end_max=100
-  pending_reboot=0
 
   status_output=$(omarchy-battery-policy-status) || {
     echo "Failed to read battery charging status." >&2
@@ -152,7 +151,6 @@ read_status() {
     custom_start_max) custom_start_max="$value" ;;
     custom_end_min) custom_end_min="$value" ;;
     custom_end_max) custom_end_max="$value" ;;
-    pending_reboot) pending_reboot="$value" ;;
     esac
   done <<< "$status_output"
 }
@@ -160,13 +158,11 @@ read_status() {
 show_status() {
   local active_policy_line="Unknown"
   local stored_window_line="Unavailable"
-  local pending_reboot_line=""
   local managed_by_line="Managed by system charging controls"
   local provider_line
   local battery_line
   local active_line
   local custom_line
-  local reboot_line
   local summary_lines=()
 
   if [[ $provider == "dell-sysman" ]]; then
@@ -189,10 +185,6 @@ show_status() {
     fi
   fi
 
-  if [[ $pending_reboot == "1" ]]; then
-    pending_reboot_line="Required to fully apply changes"
-  fi
-
   printf -v provider_line '%-11s %s' Provider "$(provider_label "$provider")"
   printf -v battery_line '%-11s %s' Battery "$battery"
   printf -v active_line '%-11s %s' Active "$active_policy_line"
@@ -206,11 +198,6 @@ show_status() {
   summary_lines+=("$active_line")
   summary_lines+=("$custom_line")
 
-  if [[ -n $pending_reboot_line ]]; then
-    printf -v reboot_line '%-11s %s' Reboot "$pending_reboot_line"
-    summary_lines+=("$reboot_line")
-  fi
-
   printf '%s\n' "${summary_lines[@]}" | gum style \
     --border normal \
     --padding "1 2"
@@ -218,34 +205,12 @@ show_status() {
   echo
 }
 
-status_snapshot() {
-  printf '%s\n' \
-    "provider=$provider" \
-    "battery=$battery" \
-    "active_policy=$active_policy" \
-    "active_raw=$active_raw" \
-    "custom_supported=$custom_supported" \
-    "custom_active=$custom_active" \
-    "custom_start_supported=$custom_start_supported" \
-    "custom_end_supported=$custom_end_supported" \
-    "custom_start=$custom_start" \
-    "custom_end=$custom_end" \
-    "pending_reboot=$pending_reboot"
-}
-
-prompt_for_reboot_if_needed() {
-  if [[ $pending_reboot == "1" ]]; then
-    if theme_confirm "Reboot now to fully apply the battery charging change?"; then
-      omarchy-system-reboot
-      exit 0
-    fi
-  fi
-}
-
 select_policy() {
   local choice
+  local custom_option_available=false
   local display
   local entry
+  local header="Choose a charging policy"
   local list_output
   local policy_id
   local policy_name
@@ -266,13 +231,18 @@ select_policy() {
     policy_id=${entry%%|*}
     policy_name=${entry#*|}
     display=$(policy_option_line "$policy_id" "$policy_name")
+    [[ $policy_id == "custom" ]] && custom_option_available=true
 
     policy_ids+=("$policy_id")
     policy_labels+=("$policy_name")
     display_options+=("$display")
   done <<< "$list_output"
 
-  choice=$(printf '%s\n' "${display_options[@]}" | theme_choose --header "Choose a charging policy") || exit 0
+  if [[ $custom_option_available == true ]]; then
+    printf -v header '%s\n%s' "$header" "Custom limits are ignored by other profiles; select Custom to apply them."
+  fi
+
+  choice=$(printf '%s\n' "${display_options[@]}" | theme_choose --header "$header") || exit 0
 
   for index in "${!display_options[@]}"; do
     if [[ ${display_options[$index]} == "$choice" ]]; then
@@ -347,36 +317,20 @@ if ! omarchy-battery-policy-available; then
 fi
 
 while true; do
-  change_applied=false
-  change_succeeded=false
-
   clear
   read_status
   show_status
-  status_before=$(status_snapshot)
   select_policy || exit 1
 
   if [[ $selected_policy_id == custom ]]; then
-    if activate_custom_policy; then
-      change_succeeded=true
-    fi
+    activate_custom_policy
   else
-    if omarchy-battery-policy-set "$selected_policy_id"; then
-      change_succeeded=true
-    fi
+    omarchy-battery-policy-set "$selected_policy_id"
   fi
 
   echo
   read_status
   show_status
-
-  if [[ $change_succeeded == true && $status_before != "$(status_snapshot)" ]]; then
-    change_applied=true
-  fi
-
-  if [[ $change_applied == true ]]; then
-    prompt_for_reboot_if_needed
-  fi
 
   if ! theme_confirm "Change another battery charging setting?"; then
     exit 0
