@@ -19,6 +19,7 @@ elephant-symbols
 elephant-todo
 elephant-unicode
 elephant-websearch
+libretro-fbneo-git
 limine-mkinitcpio-hook
 limine-snapper-sync
 macbook12-spi-driver-dkms
