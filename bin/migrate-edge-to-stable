@@ -8,6 +8,8 @@ source "$BUILD_ROOT/helpers/message-helpers.sh"
 source "$BUILD_ROOT/helpers/paths.sh"
 
 DRY_RUN=false
+SYNC_REMOTE=""
+SKIP_PROD_CHECK=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -20,18 +22,29 @@ while [[ $# -gt 0 ]]; do
     DRY_RUN=true
     shift
     ;;
+  --sync-remote)
+    SYNC_REMOTE="$2"
+    shift 2
+    ;;
+  --skip-prod-check)
+    SKIP_PROD_CHECK=true
+    shift
+    ;;
   -h | --help)
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --arch <arch>      Target architecture (x86_64 or aarch64, default: x86_64)"
-    echo "  --dry-run          Preview migration and cleanup without changing files"
-    echo "  -h, --help         Show this help message"
+    echo "  --arch <arch>         Target architecture (x86_64 or aarch64, default: x86_64)"
+    echo "  --dry-run             Preview migration and cleanup without changing files"
+    echo "  --sync-remote <path>  Rclone remote for sync (default: pkgs.omarchy.org:omarchy-pkgs)"
+    echo "  --skip-prod-check     Skip production environment check during sync"
+    echo "  -h, --help            Show this help message"
     echo ""
     echo "What it does:"
     echo "  1) Rsync package files from edge -> stable (without overwriting existing files)"
     echo "  2) Run stable cleanup (keep 2 versions)"
     echo "  3) Update stable repository database"
+    echo "  4) Sync stable repository to remote (prompts for confirmation)"
     exit 0
     ;;
   *)
@@ -77,6 +90,22 @@ else
   "$BUILD_ROOT/bin/repo" clean --mirror stable --arch "$ARCH"
   print_info "Updating stable repository database..."
   "$BUILD_ROOT/bin/repo" update --mirror stable --arch "$ARCH"
+fi
+
+if [[ "$DRY_RUN" != true ]]; then
+  echo ""
+  print_info "Syncing stable repository to remote..."
+  SYNC_ARGS=("--mirror" "stable" "--arch" "$ARCH")
+  if [[ -n "$SYNC_REMOTE" ]]; then
+    SYNC_ARGS+=("--remote" "$SYNC_REMOTE")
+  fi
+  if [[ "$SKIP_PROD_CHECK" == true ]]; then
+    SYNC_ARGS+=("--skip-prod-check")
+  fi
+  "$BUILD_ROOT/bin/sync-repo" "${SYNC_ARGS[@]}" || {
+    print_error "Sync failed"
+    exit 1
+  }
 fi
 
 print_success "Migration workflow complete"
