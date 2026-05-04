@@ -235,6 +235,60 @@ get_package_deps() {
   done
 }
 
+# For VCS packages (those with a pkgver() function), the static pkgver= in the
+# PKGBUILD is just a placeholder; the real version is computed at build time
+# from `git describe`. Without this check, version comparison always reports a
+# mismatch and we rebuild on every run, producing a package with the same
+# name+version as one already in production. Detect this by comparing the
+# upstream HEAD commit hash to the g<hash> suffix already in the production
+# version. Returns 0 when upstream is unchanged (build can be skipped).
+check_vcs_unchanged() {
+  local pkg="$1"
+  local pkgdir="$2"
+  local pkgbuild="$pkgdir/PKGBUILD"
+
+  grep -qE '^pkgver[[:space:]]*\(\)' "$pkgbuild" || return 1
+
+  local local_version=$(get_local_version "$pkg")
+  [[ -z "$local_version" ]] && return 1
+
+  # If epoch or pkgrel changed in PKGBUILD, rebuild even if upstream is unchanged
+  local pkgbuild_epoch=$(cd "$pkgdir" && bash -c 'source PKGBUILD 2>/dev/null; echo "${epoch:-}"')
+  local pkgbuild_pkgrel=$(cd "$pkgdir" && bash -c 'source PKGBUILD 2>/dev/null; echo "${pkgrel}"')
+
+  local prod_pkgrel="${local_version##*-}"
+  local prod_no_pkgrel="${local_version%-*}"
+  local prod_epoch=""
+  if [[ "$prod_no_pkgrel" == *:* ]]; then
+    prod_epoch="${prod_no_pkgrel%%:*}"
+  fi
+
+  [[ "$pkgbuild_epoch" != "$prod_epoch" ]] && return 1
+  [[ "$pkgbuild_pkgrel" != "$prod_pkgrel" ]] && return 1
+
+  # Find the first git+ source URL (skip non-git sources like patch files).
+  # Bail out on any #fragment (commit/tag/branch pinning) — HEAD comparison
+  # wouldn't be meaningful there.
+  local source_url=$(cd "$pkgdir" && bash -c '
+    source PKGBUILD 2>/dev/null
+    for s in "${source[@]}"; do
+      url="${s#*::}"
+      [[ "$url" == git+* ]] && { echo "${url#git+}"; break; }
+    done')
+  [[ -z "$source_url" ]] && return 1
+  [[ "$source_url" == *"#"* ]] && return 1
+
+  local prod_hash=$(echo "$local_version" | grep -oE '\.g[a-f0-9]{7,}' | tail -1)
+  prod_hash="${prod_hash#.g}"
+  prod_hash="${prod_hash:0:7}"
+  [[ -z "$prod_hash" ]] && return 1
+
+  local upstream_hash=$(git ls-remote "$source_url" HEAD 2>/dev/null | awk 'NR==1 {print substr($1, 1, 7)}')
+  [[ -z "$upstream_hash" ]] && return 1
+
+  [[ "$prod_hash" == "$upstream_hash" ]]
+}
+
 # Check which packages need building (version check only)
 check_needs_build() {
   local pkg="$1"
@@ -242,6 +296,10 @@ check_needs_build() {
   local pkgbuild="$pkgdir/PKGBUILD"
 
   [[ ! -f "$pkgbuild" ]] && return 1
+
+  if check_vcs_unchanged "$pkg" "$pkgdir"; then
+    return 1
+  fi
 
   # Get PKGBUILD version (including epoch if present)
   local pkgbuild_version=$(cd "$pkgdir" && bash -c 'source PKGBUILD; if [[ -n "$epoch" ]]; then echo "${epoch}:${pkgver}-${pkgrel}"; else echo "${pkgver}-${pkgrel}"; fi' 2>/dev/null)
