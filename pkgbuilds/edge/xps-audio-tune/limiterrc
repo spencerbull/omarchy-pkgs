@@ -1,0 +1,14 @@
+[soe][Limiter#0]
+alr=false
+attack=5
+bypass=false
+dithering=0
+gainBoost=false
+inputGain=0
+lookahead=5
+mode=0
+outputGain=0
+oversampling=0
+release=50
+stereoLink=100
+threshold=-1.5

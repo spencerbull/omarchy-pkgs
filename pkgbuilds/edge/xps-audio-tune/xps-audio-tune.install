@@ -1,0 +1,19 @@
+_apply_for_sudo_user() {
+    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+        xps-audio-tune-apply "${SUDO_USER}" || true
+    else
+        echo "==> Run xps-audio-tune-apply as your desktop user to install the EasyEffects config."
+    fi
+}
+
+post_install() {
+    _apply_for_sudo_user
+}
+
+post_upgrade() {
+    _apply_for_sudo_user
+}
+
+post_remove() {
+    echo "==> xps-audio-tune package removed. User EasyEffects config was left in place."
+}

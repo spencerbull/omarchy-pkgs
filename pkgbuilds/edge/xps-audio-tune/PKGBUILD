@@ -1,0 +1,66 @@
+# Maintainer: Omarchy <packages@omarchy.org>
+
+pkgname=xps-audio-tune
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='EasyEffects speaker tuning for Dell XPS SoundWire speakers'
+arch=('x86_64')
+url='https://omarchy.org'
+license=('MIT')
+depends=(
+  'bash'
+  'easyeffects'
+  'calf'
+  'lsp-plugins-lv2'
+  'mda.lv2'
+)
+optdepends=(
+  'uwsm: start EasyEffects from Omarchy Hyprland autostart'
+)
+options=('!debug')
+install=xps-audio-tune.install
+source=(
+  'xps-audio-tune-apply'
+  'easyeffectsrc'
+  'filterrc'
+  'bassEnhancerrc'
+  'bassLoudnessrc'
+  'compressorrc'
+  'limiterrc'
+  'README.md'
+  'LICENSE'
+)
+sha256sums=(
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+)
+
+package() {
+  install -Dm755 "${srcdir}/xps-audio-tune-apply" \
+    "${pkgdir}/usr/bin/xps-audio-tune-apply"
+
+  install -Dm644 "${srcdir}/easyeffectsrc" \
+    "${pkgdir}/usr/share/xps-audio-tune/easyeffects/db/easyeffectsrc"
+  install -Dm644 "${srcdir}/filterrc" \
+    "${pkgdir}/usr/share/xps-audio-tune/easyeffects/db/filterrc"
+  install -Dm644 "${srcdir}/bassEnhancerrc" \
+    "${pkgdir}/usr/share/xps-audio-tune/easyeffects/db/bassEnhancerrc"
+  install -Dm644 "${srcdir}/bassLoudnessrc" \
+    "${pkgdir}/usr/share/xps-audio-tune/easyeffects/db/bassLoudnessrc"
+  install -Dm644 "${srcdir}/compressorrc" \
+    "${pkgdir}/usr/share/xps-audio-tune/easyeffects/db/compressorrc"
+  install -Dm644 "${srcdir}/limiterrc" \
+    "${pkgdir}/usr/share/xps-audio-tune/easyeffects/db/limiterrc"
+
+  install -Dm644 "${srcdir}/README.md" \
+    "${pkgdir}/usr/share/doc/xps-audio-tune/README.md"
+  install -Dm644 "${srcdir}/LICENSE" \
+    "${pkgdir}/usr/share/licenses/xps-audio-tune/LICENSE"
+}

@@ -1,0 +1,134 @@
+#!/bin/bash
+set -euo pipefail
+
+readonly SOURCE_DIR="/usr/share/xps-audio-tune"
+readonly AUTOSTART_LINE="exec-once = uwsm-app -- easyeffects --service-mode"
+
+usage() {
+  cat <<'EOF'
+Usage: xps-audio-tune-apply [user]
+
+Installs the packaged XPS EasyEffects tuning into a user's config directory.
+When run by pacman via sudo, the sudo user is applied automatically.
+EOF
+}
+
+target_user="${1:-${SUDO_USER:-}}"
+
+case "${target_user:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
+if [[ -z "${target_user}" ]]; then
+  if [[ "${EUID}" -eq 0 ]]; then
+    echo "xps-audio-tune-apply: no target user found" >&2
+    echo "Run: xps-audio-tune-apply <user>" >&2
+    exit 1
+  fi
+
+  target_user="$(id -un)"
+fi
+
+if [[ "${target_user}" == "root" ]]; then
+  echo "xps-audio-tune-apply: refusing to install desktop audio config for root" >&2
+  exit 1
+fi
+
+if [[ "${EUID}" -eq 0 ]]; then
+  user_entry="$(getent passwd "${target_user}" || true)"
+
+  if [[ -z "${user_entry}" ]]; then
+    echo "xps-audio-tune-apply: user not found: ${target_user}" >&2
+    exit 1
+  fi
+
+  target_home="$(cut -d: -f6 <<<"${user_entry}")"
+  target_uid="$(id -u "${target_user}")"
+  target_gid="$(id -g "${target_user}")"
+else
+  if [[ "${target_user}" != "$(id -un)" ]]; then
+    echo "xps-audio-tune-apply: run as root to install for another user" >&2
+    exit 1
+  fi
+
+  target_home="${HOME}"
+  target_uid=""
+  target_gid=""
+fi
+
+if [[ ! -d "${SOURCE_DIR}/easyeffects/db" ]]; then
+  echo "xps-audio-tune-apply: packaged config missing from ${SOURCE_DIR}" >&2
+  exit 1
+fi
+
+timestamp="$(date +%Y%m%d%H%M%S)"
+
+install_config_file() {
+  local source_file="$1"
+  local target_file="$2"
+  local target_dir
+
+  target_dir="$(dirname "${target_file}")"
+  install -dm755 "${target_dir}"
+
+  if [[ -e "${target_file}" ]] && ! cmp -s "${source_file}" "${target_file}"; then
+    cp -a "${target_file}" "${target_file}.bak-xps-audio-tune-${timestamp}"
+  fi
+
+  install -m644 "${source_file}" "${target_file}"
+
+  if [[ -n "${target_uid}" ]]; then
+    chown "${target_uid}:${target_gid}" "${target_file}"
+    chown "${target_uid}:${target_gid}" "${target_dir}"
+  fi
+}
+
+install_easyeffects_config() {
+  local target_db="${target_home}/.config/easyeffects/db"
+
+  install_config_file "${SOURCE_DIR}/easyeffects/db/easyeffectsrc" "${target_db}/easyeffectsrc"
+  install_config_file "${SOURCE_DIR}/easyeffects/db/filterrc" "${target_db}/filterrc"
+  install_config_file "${SOURCE_DIR}/easyeffects/db/bassEnhancerrc" "${target_db}/bassEnhancerrc"
+  install_config_file "${SOURCE_DIR}/easyeffects/db/bassLoudnessrc" "${target_db}/bassLoudnessrc"
+  install_config_file "${SOURCE_DIR}/easyeffects/db/compressorrc" "${target_db}/compressorrc"
+  install_config_file "${SOURCE_DIR}/easyeffects/db/limiterrc" "${target_db}/limiterrc"
+
+  if [[ -n "${target_uid}" ]]; then
+    chown "${target_uid}:${target_gid}" "${target_home}/.config"
+    chown "${target_uid}:${target_gid}" "${target_home}/.config/easyeffects"
+    chown "${target_uid}:${target_gid}" "${target_db}"
+  fi
+}
+
+ensure_hypr_autostart() {
+  local hypr_dir="${target_home}/.config/hypr"
+  local autostart_file="${hypr_dir}/autostart.conf"
+
+  if [[ ! -d "${hypr_dir}" ]]; then
+    return 0
+  fi
+
+  if [[ ! -e "${autostart_file}" ]]; then
+    install -m644 /dev/null "${autostart_file}"
+  fi
+
+  if grep -Eq 'easyeffects[[:space:]]+--service-mode' "${autostart_file}"; then
+    return 0
+  fi
+
+  cp -a "${autostart_file}" "${autostart_file}.bak-xps-audio-tune-${timestamp}"
+  printf '\n%s\n' "${AUTOSTART_LINE}" >> "${autostart_file}"
+
+  if [[ -n "${target_uid}" ]]; then
+    chown "${target_uid}:${target_gid}" "${autostart_file}" "${autostart_file}.bak-xps-audio-tune-${timestamp}"
+  fi
+}
+
+install_easyeffects_config
+ensure_hypr_autostart
+
+echo "Installed XPS EasyEffects tuning for ${target_user}."
+echo "Start or restart EasyEffects with: easyeffects --service-mode"
