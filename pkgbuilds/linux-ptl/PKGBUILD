@@ -3,7 +3,7 @@
 
 pkgbase=linux-ptl
 pkgver=7.1.7.arch1
-pkgrel=1
+pkgrel=4
 pkgdesc='Linux for Panther Lake with Panel Replay power and OLED VRR fixes'
 url='https://github.com/archlinux/linux'
 arch=(
