@@ -145,6 +145,7 @@ prepare() {
   _assert_config DRM_NOUVEAU n
   _assert_config EFI y
   _assert_config EFI_CAPSULE_LOADER y
+  _assert_config EFI_ZBOOT y
   _assert_config IOMMU_DEFAULT_PASSTHROUGH y
   _assert_config INFINIBAND m
   _assert_config MLX5_CORE m
@@ -173,7 +174,7 @@ build() {
   jobs=$(nproc)
   (( jobs > 12 )) && jobs=12
 
-  make -j"$jobs" Image modules
+  make -j"$jobs" vmlinuz.efi modules
   make -j"$jobs" -C tools/bpf/bpftool vmlinux.h feature-clang-bpf-co-re=1
 }
 
