@@ -15,7 +15,11 @@ check_docker() {
 
 setup_qemu() {
   # Setup QEMU for building ARM64 packages on x86_64 hosts
-  if ! docker run --rm --privileged multiarch/qemu-user-static --reset -p yes --credential yes >/dev/null 2>&1; then
+  # Pinned binfmt/e29e7d7 ships QEMU 10.2.3. Remove a failed/stale ARM64
+  # registration first so --install cannot silently retain its interpreter.
+  local binfmt_image="tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0"
+  docker run --rm --privileged "$binfmt_image" --uninstall arm64 >/dev/null 2>&1 || true
+  if ! docker run --rm --privileged "$binfmt_image" --install arm64 >/dev/null 2>&1; then
     print_error "Failed to setup QEMU for ARM64 emulation"
     exit 1
   fi
