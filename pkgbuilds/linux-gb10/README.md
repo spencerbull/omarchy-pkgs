@@ -34,6 +34,10 @@ and hardware-specific. Build it explicitly on native aarch64 when possible:
 bin/repo build --arch aarch64 --package linux-gb10
 ```
 
+The build selects `Image` and `modules` explicitly because GB10 uses ACPI and
+the package does not ship ARM device trees. Parallel compilation is capped at
+12 jobs so the same package can also complete under x86_64 QEMU emulation.
+
 Required physical validation includes DRM KMS/Hyprland, CUDA, the in-tree
 `r8127` 10 GbE driver, MediaTek Wi-Fi, ConnectX-7 PCIe hotplug and RDMA, warm
 reboots, firmware capsules, and kernel rollback.
