@@ -20,11 +20,12 @@ build, backports NVIDIA's three-line C23 libbpf fix for Arch's current compiler,
 runs `olddefconfig`, and fails closed if required GB10 platform options drift.
 
 This package deliberately contains only the in-tree kernel and headers. Install
-Arch Linux ARM's `nvidia-open-dkms` and `nvidia-utils` together so DKMS builds
-the GB10 modules for this kernel; `nvidia-open-dkms` pins the matching user-space
-driver release through an exact package dependency. The GSP firmware, CUDA, and
-container runtime remain separate packages. Do not install or boot this kernel
-until that driver stack and the rollback path are ready.
+Arch Linux ARM's `nvidia-open-dkms=610.57.04-1` and
+`nvidia-utils=610.57.04-1` together so DKMS builds the GB10 modules for this
+kernel. That exact `nvidia-utils` package owns the GB10-required
+`gsp_ga10x.bin` and `ucodes_ga10x.bin` firmware payloads; CUDA and the container
+runtime remain separate packages. Do not install or boot this kernel until that
+driver stack and the rollback path are ready.
 
 The package is excluded from unscoped repository builds because it is large
 and hardware-specific. Build it explicitly on native aarch64 when possible:
