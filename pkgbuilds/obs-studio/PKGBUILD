@@ -14,7 +14,7 @@ depends=(
   'curl'
   'ffmpeg'
   'gtk-update-icon-cache'
-  'jack2'
+  'jack'
   'jansson'
   'libdatachannel'
   'libxcomposite'
@@ -87,9 +87,12 @@ prepare() {
 
 build() {
   local nvcodec_root="${srcdir}/nv-codec-headers-n${_nvcodec_ver}"
+  local source_prefix_map="-ffile-prefix-map=${srcdir}=/usr/src/debug/${pkgname}"
   sed "s|@@PREFIX@@|${nvcodec_root}|" \
     "${nvcodec_root}/ffnvcodec.pc.in" > "${nvcodec_root}/ffnvcodec.pc"
   export PKG_CONFIG_PATH="${nvcodec_root}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+  export CFLAGS+=" ${source_prefix_map}"
+  export CXXFLAGS+=" ${source_prefix_map}"
 
   local cmake_options=(
     -B build
@@ -127,6 +130,25 @@ build() {
   )
 
   cmake "${cmake_options[@]}"
+  cmake --build build --target obslua_swig_compilation obspython_swig_compilation
+
+  # SWIG expands libobs's FILE_LINE macro while generating its wrappers, so
+  # the compiler's -ffile-prefix-map cannot rewrite those two string literals.
+  # Normalize only the generated wrappers before compiling them.
+  local wrapper wrapper_count=0
+  while IFS= read -r -d '' wrapper; do
+    sed -i "s|${srcdir}|/usr/src/debug/${pkgname}|g" "$wrapper"
+    if grep -Fq "${srcdir}" "$wrapper"; then
+      printf 'Temporary source path remains in %s\n' "$wrapper" >&2
+      return 1
+    fi
+    wrapper_count=$((wrapper_count + 1))
+  done < <(find build/shared/obs-scripting -type f -name '*_wrap.*' -print0)
+  ((wrapper_count == 2)) || {
+    printf 'Expected two generated SWIG wrappers, found %d\n' "$wrapper_count" >&2
+    return 1
+  }
+
   cmake --build build
 }
 

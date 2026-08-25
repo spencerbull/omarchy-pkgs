@@ -2,10 +2,7 @@ diff --git a/resources/app.asar.unpacked/node_modules/btime/index.js b/resources
 index c28bd8e..6a4809c 100644
 --- a/resources/app.asar.unpacked/node_modules/btime/index.js
 +++ b/resources/app.asar.unpacked/node_modules/btime/index.js
-@@ -7,8 +7,6 @@ var Node = {
-   process: process
- };
- 
+@@ -9,5 +9,3 @@
 -var binding = require('./binding.node');
 -
  function assertPath(key, value) {
@@ -23,12 +20,10 @@ diff --git a/resources/app.asar.unpacked/node_modules/get-fonts/index.js b/resou
 index 3f4fd3d..d123aa9 100644
 --- a/resources/app.asar.unpacked/node_modules/get-fonts/index.js
 +++ b/resources/app.asar.unpacked/node_modules/get-fonts/index.js
-@@ -1,7 +1,22 @@
- 'use strict';
- 
+@@ -3 +3 @@
 -var binding = require('./binding.node');
 +var execFile = require('child_process').execFile;
- 
+@@ -5,3 +5,18 @@
  module.exports = {
 -  getFonts: () => binding.getFonts()
 +  getFonts: () => new Promise((resolve, reject) => {

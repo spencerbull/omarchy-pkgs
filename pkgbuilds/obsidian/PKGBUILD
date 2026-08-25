@@ -2,7 +2,7 @@
 
 pkgname=obsidian
 pkgver=1.13.7
-pkgrel=1
+pkgrel=2.1
 pkgdesc='A powerful knowledge base on top of a local folder of Markdown files'
 arch=('aarch64')
 url='https://obsidian.md'
@@ -54,7 +54,7 @@ source=(
 )
 sha256sums=(
   '98aac34d1f132a35cf506fc3fa196d595dcdeefdebd44b0cc5faaa7a1a210de2'
-  '07b6e57a36550fc4e053ecf1cb5b5afbd2b7aa9bd7ed37d3d936223a576300ef'
+  '23e55268117319ad11f64e085c7cd9dcd1e613d1d2ed9c9afa2b7e1fbcdc9a5d'
   '99c075af3f34cb358d6e93565686792c45562b17f8002fce0e8a63b83cbbe786'
   '09f8805ac812dcf0d3e494aae955d56352dde4326b1d84fe76dd5073cf0ed863'
   'd9fdc14f9c2fb95bb38310281268fdad413c1b49fa93213df3184f9b0ca1175c'
