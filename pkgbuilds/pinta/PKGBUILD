@@ -2,21 +2,39 @@
 
 pkgname=pinta
 pkgver=3.1.2
-pkgrel=1
+pkgrel=2
 pkgdesc="Drawing/editing program modeled after Paint.NET. It's goal is to provide a simplified alternative to GIMP for casual users"
 
-arch=('x86_64')
+arch=('x86_64' 'aarch64')
 license=('MIT')
 url="https://pinta-project.com"
 
-makedepends=('pkgconf' 'autoconf-archive' 'intltool' 'dotnet-sdk' 'dotnet-runtime' 'dotnet-host' 'dotnet-targeting-pack' 'gtk4' 'perl')
-depends=('dotnet-runtime' 'dotnet-host' 'libadwaita' 'hicolor-icon-theme' 'webp-pixbuf-loader')
+makedepends=('pkgconf' 'autoconf-archive' 'intltool' 'gtk4' 'perl')
+makedepends_x86_64=('dotnet-sdk' 'dotnet-runtime' 'dotnet-host' 'dotnet-targeting-pack')
+depends=('libadwaita' 'hicolor-icon-theme' 'webp-pixbuf-loader')
+depends_x86_64=('dotnet-runtime' 'dotnet-host')
+depends_aarch64=('ca-certificates' 'glibc' 'icu' 'krb5' 'libgcc' 'libstdc++' 'libunwind' 'openssl' 'tzdata' 'zlib')
 
 provides=($pkgname)
 conflicts=($pkgname-git)
 
+_dotnet_sdk_version=10.0.400
 source=("Pinta-${pkgver}.tar.gz::https://github.com/PintaProject/Pinta/archive/refs/tags/${pkgver}.tar.gz")
+source_aarch64=("dotnet-sdk-${_dotnet_sdk_version}-linux-arm64.tar.gz::https://builds.dotnet.microsoft.com/dotnet/Sdk/${_dotnet_sdk_version}/dotnet-sdk-${_dotnet_sdk_version}-linux-arm64.tar.gz")
 sha256sums=('98ed517b33f0e40fd1e3915ea5146355845ac12efd3bb07812c68a52c714cac6')
+sha512sums_aarch64=('a1b45da58e5591fff909a6126ac6bfc1ef9c12bc72c0625f7815e83a82be1a902317ee96926cbbf81324a45c6abf2ed8102a216d0507879cc166159af78d1b77')
+noextract=("dotnet-sdk-${_dotnet_sdk_version}-linux-arm64.tar.gz")
+
+_set_dotnet_env() {
+  if [[ "$CARCH" == aarch64 ]]; then
+    export DOTNET_ROOT="${srcdir}/dotnet-sdk-${_dotnet_sdk_version}"
+    export PATH="$DOTNET_ROOT:$PATH"
+    if [[ ! -x "$DOTNET_ROOT/dotnet" ]]; then
+      error "Missing native AArch64 .NET SDK"
+      return 1
+    fi
+  fi
+}
 
 prepare() {
   cd "${srcdir}/Pinta-${pkgver}"
@@ -29,21 +47,53 @@ prepare() {
 
   sed -i 's/net8.0/net10.0/g' Directory.Build.props
 
+  if [[ "$CARCH" == aarch64 ]]; then
+    mkdir -p "${srcdir}/dotnet-sdk-${_dotnet_sdk_version}"
+    bsdtar -xf "${srcdir}/dotnet-sdk-${_dotnet_sdk_version}-linux-arm64.tar.gz" -C "${srcdir}/dotnet-sdk-${_dotnet_sdk_version}"
+  fi
+  _set_dotnet_env || return 1
+
   ./autogen.sh --prefix=/usr --sysconfdir=/etc --localstatedir=/var
 }
 
 build() {
   cd "${srcdir}/Pinta-${pkgver}"
+  _set_dotnet_env || return 1
 
-  sed -i -r 's|^(PINTA_BUILD_OPTS\s=\s.*)|\1 -p:RuntimeIdentifier=linux-x64|g' Makefile
+  local runtime_id
+  case "$CARCH" in
+    x86_64) runtime_id=linux-x64 ;;
+    aarch64) runtime_id=linux-arm64 ;;
+    *)
+      error "Unsupported architecture: $CARCH"
+      return 1
+      ;;
+  esac
+
+  sed -i -r "s|^(PINTA_BUILD_OPTS\\s=\\s.*)|\\1 -p:RuntimeIdentifier=${runtime_id}|g" Makefile
+  if [[ "$CARCH" == aarch64 ]]; then
+    sed -i 's/--self-contained false/--self-contained true/g' Makefile
+  fi
 
   make
 }
 
 package() {
   cd "${srcdir}/Pinta-${pkgver}"
+  _set_dotnet_env || return 1
 
   make DESTDIR="${pkgdir}" install
+
+  if [[ "$CARCH" == aarch64 ]]; then
+    install -Dm755 "publish/Pinta" "${pkgdir}/usr/lib/pinta/Pinta"
+    install -Dm755 -t "${pkgdir}/usr/lib/pinta/" publish/*.so
+    if [[ -f publish/createdump ]]; then
+      install -Dm755 "publish/createdump" "${pkgdir}/usr/lib/pinta/createdump"
+    fi
+    sed -i 's|exec dotnet /usr/lib/pinta/Pinta.dll|exec /usr/lib/pinta/Pinta|' "${pkgdir}/usr/bin/pinta"
+    install -Dm644 "${srcdir}/dotnet-sdk-${_dotnet_sdk_version}/LICENSE.txt" "${pkgdir}/usr/share/licenses/${pkgname}/dotnet-LICENSE.txt"
+    install -Dm644 "${srcdir}/dotnet-sdk-${_dotnet_sdk_version}/ThirdPartyNotices.txt" "${pkgdir}/usr/share/licenses/${pkgname}/dotnet-ThirdPartyNotices.txt"
+  fi
 
   chmod -v 755 "${pkgdir}/usr/lib/pinta/"*.dll
 
