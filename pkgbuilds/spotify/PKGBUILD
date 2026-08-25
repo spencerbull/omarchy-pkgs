@@ -9,15 +9,16 @@ pkgname=spotify
 pkgver='1.2.95.453'
 epoch=1
 _commit=g0eeebbed
-pkgrel=1
+pkgrel=2
 pkgdesc='A proprietary music streaming service'
-arch=('x86_64')
+arch=('x86_64' 'aarch64')
 license=('custom')
 url='https://www.spotify.com'
-depends=('alsa-lib>=1.0.14' 'gtk3' 'libxss' 'desktop-file-utils' 'openssl' 'nss' 'at-spi2-atk' 'libcurl-gnutls' 'libsm' 'libayatana-appindicator')
-optdepends=('ffmpeg4.4: Adds support for playback of local files'
-            'zenity: Adds support for importing local files'
-            'libnotify: Desktop notifications')
+depends_x86_64=('alsa-lib>=1.0.14' 'gtk3' 'libxss' 'desktop-file-utils' 'openssl' 'nss' 'at-spi2-atk' 'libcurl-gnutls' 'libsm' 'libayatana-appindicator')
+depends_aarch64=('bash' 'chromium')
+optdepends_x86_64=('ffmpeg4.4: Adds support for playback of local files'
+                   'zenity: Adds support for importing local files'
+                   'libnotify: Desktop notifications')
 options=('!strip')
 
 # NOTE: We switched from stable to testing on 18th march, as the spotify
@@ -26,21 +27,28 @@ options=('!strip')
 # http://repository.spotify.com/dists/testing/Release
 # http://repository.spotify.com/dists/testing/non-free/binary-amd64/Packages
 # http://repository.spotify.com/dists/testing/Release.gpg
-source=("${pkgname}-${pkgver}-${_commit}-x86_64.deb::http://repository.spotify.com/pool/non-free/s/spotify-client/spotify-client_${pkgver}.${_commit}_amd64.deb"
-        "spotify.sh"
-        "spotify.protocol"
-        "LICENSE"
+source=('LICENSE')
+source_x86_64=("${pkgname}-${pkgver}-${_commit}-x86_64.deb::http://repository.spotify.com/pool/non-free/s/spotify-client/spotify-client_${pkgver}.${_commit}_amd64.deb"
+        'spotify.sh'
+        'spotify.protocol'
         # GPG signature check
         "${pkgname}-${pkgver}-${pkgrel}-Release::http://repository.spotify.com/dists/testing/Release"
         "${pkgname}-${pkgver}-${pkgrel}-Release.sig::http://repository.spotify.com/dists/testing/Release.gpg"
         "${pkgname}-${pkgver}-${pkgrel}-x86_64-Packages::http://repository.spotify.com/dists/testing/non-free/binary-amd64/Packages")
-sha512sums=('902d9b8200d67e10a19ce5e34316ea14ed05e935fe5493c21f7a8db31b2ffc91375dd18a68734e781b815d57ac9e3aff36da79bce9ff6882a1f247542caab451'
-            'da48b628a4ea925dd8521133ebf364b261b11aed252d264dde6605d915cdb631919ffe672c58534bcdb60869e5d87a49a60a8198780b99517123f0031e83fdb1'
-            '999abe46766a4101e27477f5c9f69394a4bb5c097e2e048ec2c6cb93dfa1743eb436bde3768af6ba1b90eaac78ea8589d82e621f9cbe7d9ab3f41acee6e8ca20'
-            '2e16f7c7b09e9ecefaa11ab38eb7a792c62ae6f33d95ab1ff46d68995316324d8c5287b0d9ce142d1cf15158e61f594e930260abb8155467af8bc25779960615'
-            'b1a317c49c32ca63be65a85a92f486ecbb39ffc402c8c459f6c6542261584f740da318d1311fb71832e68a56754d547805de0cffb19dde6a79c4a14c1914aee6'
-            'SKIP'
-            'bd52856fb7531af4f7782fdd3b1d047e99dc00b02223035022f70112d2ecf9c80d7c2bf816eb78aeced8de577a9975fab5042c8e8ce4ca689ce3dbc46a9e4703')
+source_aarch64=(
+        'spotify-aarch64.sh'
+        'spotify-aarch64.desktop'
+        'spotify.png::https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/spotify.png')
+sha512sums=('2e16f7c7b09e9ecefaa11ab38eb7a792c62ae6f33d95ab1ff46d68995316324d8c5287b0d9ce142d1cf15158e61f594e930260abb8155467af8bc25779960615')
+sha512sums_x86_64=('902d9b8200d67e10a19ce5e34316ea14ed05e935fe5493c21f7a8db31b2ffc91375dd18a68734e781b815d57ac9e3aff36da79bce9ff6882a1f247542caab451'
+                    'da48b628a4ea925dd8521133ebf364b261b11aed252d264dde6605d915cdb631919ffe672c58534bcdb60869e5d87a49a60a8198780b99517123f0031e83fdb1'
+                    '999abe46766a4101e27477f5c9f69394a4bb5c097e2e048ec2c6cb93dfa1743eb436bde3768af6ba1b90eaac78ea8589d82e621f9cbe7d9ab3f41acee6e8ca20'
+                    'SKIP'
+                    'SKIP'
+                    'SKIP')
+sha512sums_aarch64=('fcafb7b604845aca8d07690e4aa2509467a2d29377e511789f054202b8c41a7c91efe1457dbbce2ec0a04249ff7737f748574c91e87697a3fd6884475fb8a7c8'
+                    '50d7f1593713d7fcb4fd06625362e8f158bfb96f82f4ddda26701ead33f9b39a9a30fcb590182844b85e1d8d4ba5fbafbed90c6fe60e83a77c0c4d355f9cb99f'
+                    'f574d38363d97f7bf1e33f9532176dc99686e2eec7657bea3fe76238d3238f682da68cf10577af0556dd9a727832b79b10a2e1d401a20e906f5223d804e7f542')
 
 # Import key with:
 # curl -sS https://download.spotify.com/debian/pubkey_5384CE82BA52C83A.gpg | gpg --import -
@@ -54,14 +62,9 @@ validpgpkeys=('E1096BCBFF6D418796DE78515384CE82BA52C83A') # Spotify Public Repos
 # 2EBF997C15BDA244B6EBF5D84773BD5E130D1D45
 # B420FD3777CCE3A7F0076B55C85668DF69375001
 
-# Skip "Release" and "Packages" files hashes as they are unstable
-# Since "updpkgsums"/"pkgctl version upgrade" overwrite the checksum array with
-# literal hashes, set them to SKIP with indexed assignments (pacman-contrib#119)
-# https://gitlab.archlinux.org/pacman/pacman-contrib/-/issues/119
-sha512sums[4]='SKIP'
-sha512sums[6]='SKIP'
-
 prepare() {
+    [[ $CARCH == x86_64 ]] || return 0
+
     # Validate hashes from the PGP signed "Release" file
     echo "$(grep non-free/binary-amd64/Packages ${pkgname}-${pkgver}-${pkgrel}-Release | tail -n 2 | head -n 1 | awk '{print $1}') ${pkgname}-${pkgver}-${pkgrel}-x86_64-Packages" \
         > "${pkgname}-${pkgver}-x86_64-Packages.sha256"
@@ -73,6 +76,14 @@ prepare() {
 }
 
 package() {
+    if [[ $CARCH == aarch64 ]]; then
+        install -Dm755 spotify-aarch64.sh "${pkgdir}/usr/bin/spotify"
+        install -Dm644 spotify-aarch64.desktop "${pkgdir}/usr/share/applications/spotify.desktop"
+        install -Dm644 spotify.png "${pkgdir}/usr/share/icons/hicolor/512x512/apps/spotify.png"
+        install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+        return
+    fi
+
     tar -xzf data.tar.gz --no-same-owner -C "${pkgdir}"
 
     # Enable spotify to open URLs from the webapp

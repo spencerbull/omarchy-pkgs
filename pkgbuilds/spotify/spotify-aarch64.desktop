@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Spotify
+GenericName=Music Player
+Comment=Listen to music and podcasts with Spotify
+Exec=spotify %U
+Icon=spotify
+Terminal=false
+StartupNotify=true
+Categories=Audio;Music;Player;AudioVideo;
+MimeType=x-scheme-handler/spotify;
