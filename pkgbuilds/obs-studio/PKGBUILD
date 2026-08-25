@@ -1,0 +1,146 @@
+# Maintainer: Omarchy <https://omarchy.org>
+# Based on the Arch Linux obs-studio package maintained by Christian Heusel
+# and Jonathan Grotelueschen.
+
+pkgname=obs-studio
+pkgver=32.2.2
+pkgrel=1
+_nvcodec_ver=13.0.19.1
+pkgdesc='Free, open source software for live streaming and recording'
+arch=('aarch64')
+url='https://obsproject.com'
+license=('GPL-2.0-only')
+depends=(
+  'curl'
+  'ffmpeg'
+  'gtk-update-icon-cache'
+  'jack2'
+  'jansson'
+  'libdatachannel'
+  'libxcomposite'
+  'libxinerama'
+  'libxkbcommon-x11'
+  'luajit'
+  'mbedtls3'
+  'pciutils'
+  'pipewire'
+  'python'
+  'qrcodegencpp-cmake'
+  'qt6-svg'
+  'rnnoise'
+  'simde'
+  'uthash'
+)
+makedepends=(
+  'asio'
+  'cmake'
+  'extra-cmake-modules'
+  'git'
+  'libfdk-aac'
+  'nlohmann-json'
+  'sndio'
+  'swig'
+  'websocketpp'
+  'x264'
+)
+optdepends=(
+  'intel-media-driver: hardware encoding for recent Intel GPUs'
+  'libfdk-aac: FDK AAC codec support'
+  'libva-intel-driver: hardware encoding for older Intel GPUs'
+  'libva-mesa-driver: VA-API hardware encoding'
+  'nvidia-utils: NVIDIA NVENC hardware encoding runtime'
+  'obs-studio-plugin-browser: CEF browser source (requires an AArch64 CEF package)'
+  'sndio: Sndio input client'
+  'v4l2loopback-dkms: virtual camera support'
+  'xdg-desktop-portal-impl: Wayland window and screen capture'
+)
+
+source=(
+  "${pkgname}::git+https://github.com/obsproject/obs-studio#tag=${pkgver}"
+  "${pkgname}-libdshowcapture::git+https://github.com/obsproject/libdshowcapture.git"
+  "${pkgname}-obs-browser::git+https://github.com/obsproject/obs-browser.git"
+  "${pkgname}-obs-websocket::git+https://github.com/obsproject/obs-websocket.git"
+  "nv-codec-headers-${_nvcodec_ver}.tar.gz::https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/n${_nvcodec_ver}.tar.gz"
+  'obs-studio-aarch64-nvenc.patch'
+)
+sha256sums=(
+  '18edf1162e6cc37c192c4532ccfb902a07c5891d5929e95c4f028c6ad5d762d5'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'c293161bd92dac53f2f8fab08abcd4f96773c3644a57b23c2260b4be2311ab2f'
+  '12fe69530c1efd6faf6beb93d3039fab9f0c7bec106d4e3843250a15a31b3c04'
+)
+
+prepare() {
+  cd "${pkgname}"
+
+  git submodule init
+  git config submodule."plugins/obs-browser".url "${srcdir}/${pkgname}-obs-browser"
+  git config submodule."plugins/obs-websocket".url "${srcdir}/${pkgname}-obs-websocket"
+  git config submodule."plugins/win-dshow/libdshowcapture".url \
+    "${srcdir}/${pkgname}-libdshowcapture"
+  git -c protocol.file.allow=always submodule update --init --recursive
+
+  patch -Np1 -i "${srcdir}/obs-studio-aarch64-nvenc.patch"
+}
+
+build() {
+  local nvcodec_root="${srcdir}/nv-codec-headers-n${_nvcodec_ver}"
+  sed "s|@@PREFIX@@|${nvcodec_root}|" \
+    "${nvcodec_root}/ffnvcodec.pc.in" > "${nvcodec_root}/ffnvcodec.pc"
+  export PKG_CONFIG_PATH="${nvcodec_root}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+
+  local cmake_options=(
+    -B build
+    -S "${pkgname}"
+    -DCMAKE_BUILD_TYPE=None
+    -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF
+    -DCMAKE_INSTALL_PREFIX=/usr
+    # mbedtls 4 is not supported yet: https://github.com/obsproject/obs-studio/issues/13601
+    -DMbedTLS_INCLUDE_DIR=/usr/include/mbedtls3
+    -DMbedcrypto_LIBRARY=/usr/lib/mbedtls3/libmbedcrypto.so
+    -DMbedtls_LIBRARY=/usr/lib/mbedtls3/libmbedtls.so
+    -DMbedx509_LIBRARY=/usr/lib/mbedtls3/libmbedx509.so
+    # Arch Linux ARM does not publish CEF. The browser remains an explicit
+    # optional split-package gap instead of being silently bundled or dropped.
+    -DENABLE_BROWSER=OFF
+    -DENABLE_VST=ON
+    -DENABLE_VLC=OFF
+    -DENABLE_NEW_MPEGTS_OUTPUT=OFF
+    -DENABLE_AJA=OFF
+    -DENABLE_JACK=ON
+    -DENABLE_LIBFDK=ON
+    -DENABLE_WEBRTC=ON
+    -DENABLE_WEBSOCKET=ON
+    # ALARM's FFmpeg 9 package has no *_nvenc encoders. Build OBS's direct
+    # NVENC plugin instead; Coleman runtime probes gate any support claim.
+    -DENABLE_FFMPEG_NVENC=OFF
+    -DENABLE_NVENC=ON
+    # Driver 580.173.02 on GB10 exposes NVENC API 13.0. ALARM currently ships
+    # 13.1 headers, which make the upstream capability helper reject that
+    # driver before registering codecs. Pin the newest 13.0 headers instead.
+    -DFFnvcodec_INCLUDE_DIR="${nvcodec_root}/include"
+    -DOBS_VERSION_OVERRIDE="${pkgver}"
+    -DCALM_DEPRECATION=ON
+    -Wno-dev
+  )
+
+  cmake "${cmake_options[@]}"
+  cmake --build build
+}
+
+check() {
+  local plugin=build/plugins/obs-nvenc/obs-nvenc.so
+  local probe=build/plugins/obs-nvenc/obs-nvenc-test/obs-nvenc-test
+
+  test -s "$plugin"
+  test -x "$probe"
+  file "$plugin" | grep -q 'ARM aarch64'
+  file "$probe" | grep -q 'ARM aarch64'
+  strings "$probe" | grep -q 'libnvidia-encode.so.1'
+}
+
+package() {
+  DESTDIR="${pkgdir}" cmake --install build
+}
