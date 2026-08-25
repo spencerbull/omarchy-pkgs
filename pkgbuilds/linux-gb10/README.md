@@ -34,10 +34,12 @@ and hardware-specific. Build it explicitly on native aarch64 when possible:
 bin/repo build --arch aarch64 --package linux-gb10
 ```
 
-The build selects `vmlinuz.efi` and `modules` explicitly because
-`CONFIG_EFI_ZBOOT=y` makes the EFI image the kernel's declared `image_name`.
-That target builds `Image` without building every ARM device tree; GB10 uses
-ACPI and the package does not ship DTBs. Parallel compilation is capped at 12
+The build selects the raw arm64 `Image` and modules explicitly without building
+every ARM device tree; GB10 uses ACPI and the package does not ship DTBs. The
+raw image is intentional: `CONFIG_EFI_ZBOOT=y` changes the kernel's declared
+`image_name` to the PE/COFF-wrapped `vmlinuz.efi`, but Omarchy's installed
+system boots through Limine's aarch64 Linux protocol, which requires the native
+arm64 Linux image header at offset zero. Parallel compilation is capped at 12
 jobs so the same package can also complete under x86_64 QEMU emulation.
 
 Required physical validation includes DRM KMS/Hyprland, CUDA, the in-tree

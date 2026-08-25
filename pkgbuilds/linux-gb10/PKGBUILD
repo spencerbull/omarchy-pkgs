@@ -3,7 +3,7 @@
 
 pkgbase=linux-gb10
 pkgver=6.17.13.nvidia1029
-pkgrel=1
+pkgrel=2
 pkgdesc='NVIDIA GB10 kernel based on the qualified Ubuntu NVIDIA 6.17 lineage'
 url='https://github.com/NVIDIA/NV-Kernels'
 arch=(
@@ -174,7 +174,7 @@ build() {
   jobs=$(nproc)
   (( jobs > 12 )) && jobs=12
 
-  make -j"$jobs" vmlinuz.efi modules
+  make -j"$jobs" Image modules
   make -j"$jobs" -C tools/bpf/bpftool vmlinux.h feature-clang-bpf-co-re=1
 }
 
@@ -200,7 +200,11 @@ _package() {
   local modulesdir="$pkgdir/usr/lib/modules/$(<version)"
 
   echo "Installing boot image..."
-  install -Dm644 "$(make -s image_name)" "$modulesdir/vmlinuz"
+  # Limine's aarch64 Linux protocol expects the native arm64 Image header at
+  # offset zero. CONFIG_EFI_ZBOOT changes image_name to the PE/COFF-wrapped
+  # vmlinuz.efi, which is bootable as an EFI application but not as a Limine
+  # Linux-protocol kernel.
+  install -Dm644 arch/arm64/boot/Image "$modulesdir/vmlinuz"
 
   # Used by mkinitcpio to name the kernel.
   echo "$pkgbase" | install -Dm644 /dev/stdin "$modulesdir/pkgbase"
