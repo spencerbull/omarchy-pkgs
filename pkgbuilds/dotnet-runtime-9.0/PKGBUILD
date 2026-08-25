@@ -1,0 +1,70 @@
+# Maintainer: Spencer Bull <Spencer.Bull@Dell.com>
+# ARM64 binary packaging based on Arch Linux's dotnet-core split packages.
+
+pkgbase=dotnet-runtime-9.0
+pkgname=(
+  dotnet-host
+  dotnet-runtime-9.0
+)
+pkgver=9.0.19
+pkgrel=1
+pkgdesc='The .NET Core runtime'
+arch=(aarch64)
+url='https://dotnet.microsoft.com'
+license=(MIT)
+options=(!strip)
+
+_archive="dotnet-runtime-${pkgver}-linux-arm64.tar.gz"
+source=("${_archive}::https://builds.dotnet.microsoft.com/dotnet/Runtime/${pkgver}/${_archive}")
+noextract=("${_archive}")
+sha512sums=('e07510c649fedf3fb13dd21026f34c8bcd17f54a68e4c071a1287d26e107e09d9ccd13ef0f63c630d309b8b797310a8dc42aed6a551eb145d9fad86a5819a4ee')
+
+package_dotnet-host() {
+  pkgdesc='A generic driver for the .NET Core Command Line Interface'
+  depends=(
+    glibc
+    libgcc
+    libstdc++
+  )
+
+  install -dm755 \
+    "$pkgdir/usr/bin" \
+    "$pkgdir/usr/lib" \
+    "$pkgdir/usr/share/dotnet" \
+    "$pkgdir/usr/share/licenses/dotnet-host"
+  bsdtar -xf "$_archive" \
+    -C "$pkgdir/usr/share/dotnet" \
+    --no-same-owner \
+    dotnet host
+  bsdtar -xf "$_archive" \
+    -C "$pkgdir/usr/share/licenses/dotnet-host" \
+    --no-same-owner \
+    LICENSE.txt ThirdPartyNotices.txt
+
+  ln -s /usr/share/dotnet/dotnet "$pkgdir/usr/bin/dotnet"
+  ln -s "/usr/share/dotnet/host/fxr/${pkgver}/libhostfxr.so" \
+    "$pkgdir/usr/lib/libhostfxr.so"
+}
+
+package_dotnet-runtime-9.0() {
+  depends=(
+    dotnet-host
+    glibc
+    icu
+    krb5
+    libgcc
+    libstdc++
+    libunwind
+    openssl
+    zlib
+  )
+  optdepends=('lttng-ust2.12: CoreCLR tracing')
+  provides=("dotnet-runtime=${pkgver}")
+
+  install -dm755 "$pkgdir/usr/share/dotnet" "$pkgdir/usr/share/licenses"
+  bsdtar -xf "$_archive" \
+    -C "$pkgdir/usr/share/dotnet" \
+    --no-same-owner \
+    shared/Microsoft.NETCore.App
+  ln -s dotnet-host "$pkgdir/usr/share/licenses/dotnet-runtime-9.0"
+}

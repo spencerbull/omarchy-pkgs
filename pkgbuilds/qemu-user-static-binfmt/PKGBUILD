@@ -1,0 +1,175 @@
+# Maintainer: Spencer Bull <Spencer.Bull@Dell.com>
+# Static user-mode split derived from Arch Linux's qemu 11.1.0-1 packaging.
+
+pkgbase=qemu-user-static
+pkgname=(
+  qemu-user-static
+  qemu-user-static-binfmt
+)
+pkgver=11.1.0
+pkgrel=1
+pkgdesc='QEMU static user mode emulation'
+arch=(aarch64)
+url='https://www.qemu.org/'
+license=(
+  BSD-2-Clause
+  BSD-2-Clause-Patent
+  BSD-3-Clause
+  CC0-1.0
+  FSFAP
+  GPL-1.0-or-later
+  GPL-2.0-only
+  'GPL-2.0-only WITH Linux-syscall-note'
+  'GPL-2.0-only WITH Linux-syscall-note OR BSD-2-Clause'
+  'GPL-2.0-only WITH Linux-syscall-note OR BSD-3-Clause'
+  GPL-2.0-or-later
+  'GPL-2.0-or-later OR BSD-3-Clause'
+  'GPL-2.0-or-later WITH Linux-syscall-note'
+  ISC
+  'LGPL-2.1-only OR BSD-3-Clause'
+  LGPL-2.0-or-later
+  LGPL-2.1-or-later
+  LicenseRef-Public-Domain
+  MIT
+)
+makedepends=(
+  glib2
+  glib2-devel
+  libgcc
+  meson
+  pcre2
+  python
+  python-distlib
+  python-pip
+  python-setuptools
+  zlib
+  zlib-static
+)
+source=(
+  "https://download.qemu.org/qemu-${pkgver}.tar.xz"
+  "https://download.qemu.org/qemu-${pkgver}.tar.xz.sig"
+)
+sha512sums=(
+  '17009c49b1a4f35b150f98c7c3955cb44bf9c63593f124276b328da97568f600724b8f26759fbac88e96e814bda389491713e34b3aae53fa515277f5a868ea5a'
+  'SKIP'
+)
+b2sums=(
+  'bdcbd99067718c13186ed5f63bf6a7434e5f3acd455410ec029a0bbed45eb0fdcc9f9a3474af33e4e159137f2cf66b704998eda2c386297d73957fe26fba9722'
+  'SKIP'
+)
+validpgpkeys=(
+  CEACC9E15534EBABB82D3FA03353C9CEF108B584  # Michael Roth <flukshun@gmail.com>
+)
+
+_install_licenses() {
+  install -Dm644 "qemu-${pkgver}/LICENSE" ./*LICENSE*.txt \
+    -t "$pkgdir/usr/share/licenses/$pkgname/"
+  install -Dm644 "qemu-${pkgver}/tests/uefi-test-tools/LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/BSD-2-Clause.txt"
+  install -Dm644 "qemu-${pkgver}/pc-bios/edk2-licenses.txt" \
+    -t "$pkgdir/usr/share/licenses/$pkgname/"
+}
+
+prepare() {
+  sed -n '1,23p' "qemu-${pkgver}/tcg/tcg-internal.h" > tcg.LICENSE.MIT.txt
+  sed -n '1,23p' "qemu-${pkgver}/tcg/tci/tcg-target.h" > tci.LICENSE.MIT.txt
+  sed -n '2,4p' "qemu-${pkgver}/audio/sndioaudio.c" > audio.LICENSE.ISC.txt
+  sed -n '3,33p' "qemu-${pkgver}/include/standard-headers/linux/fuse.h" \
+    > fuse.LICENSE.BSD-2-Clause.txt
+  mkdir -p build-static
+}
+
+build() {
+  # Keep assertions and other __FILE__ strings independent of the build root.
+  CFLAGS+=" -ffile-prefix-map=${srcdir}=/usr/src/debug/${pkgbase}-${pkgver}"
+  CXXFLAGS+=" -ffile-prefix-map=${srcdir}=/usr/src/debug/${pkgbase}-${pkgver}"
+
+  local configure_static_options=(
+    --prefix=/usr
+    --sysconfdir=/etc
+    --libexecdir=/usr/lib/qemu
+    --localstatedir=/var
+    --docdir=/usr/share/doc/qemu
+    --enable-attr
+    --enable-linux-user
+    --enable-tcg
+    --disable-bpf
+    --disable-bsd-user
+    --disable-capstone
+    --disable-docs
+    --disable-fdt
+    --disable-gcrypt
+    --disable-gnutls
+    --disable-gtk
+    --disable-install-blobs
+    --disable-kvm
+    --disable-libiscsi
+    --disable-libnfs
+    --disable-libssh
+    --disable-linux-io-uring
+    --disable-nettle
+    --disable-opengl
+    --disable-qom-cast-debug
+    --disable-sdl
+    --disable-system
+    --disable-tools
+    --disable-tpm
+    --disable-vde
+    --disable-vhost-crypto
+    --disable-vhost-kernel
+    --disable-vhost-net
+    --disable-vhost-user
+    --disable-vnc
+    --disable-werror
+    --disable-xen
+    --disable-zstd
+    --static
+  )
+
+  cd build-static
+  "../qemu-${pkgver}/configure" "${configure_static_options[@]}"
+  ninja
+}
+
+package_qemu-user-static() {
+  optdepends=('qemu-user-static-binfmt: for binary format rules')
+
+  meson install -C build-static --destdir "$pkgdir"
+  local binary
+  for binary in "$pkgdir"/usr/bin/qemu-*; do
+    mv "$binary" "${binary}-static"
+  done
+  # Meson's static install also stages data owned by Arch's qemu-common split.
+  # Keep this package limited to the static user-mode binaries and licenses.
+  rm -r "$pkgdir/usr/share/qemu"
+  _install_licenses
+}
+
+package_qemu-user-static-binfmt() {
+  pkgdesc='Binary format rules for QEMU static user mode emulation'
+  depends=("qemu-user-static=${pkgver}-${pkgrel}")
+  provides=(qemu-user-binfmt-provider)
+  conflicts=(qemu-user-binfmt-provider)
+
+  install -dm755 "$pkgdir/usr/lib/binfmt.d"
+  "qemu-${pkgver}/scripts/qemu-binfmt-conf.sh" \
+    --systemd ALL \
+    --exportdir "$pkgdir/usr/lib/binfmt.d/" \
+    --qemu-path /usr/bin \
+    --persistent yes \
+    --preserve-argv0 yes
+
+  local config name interpreter
+  for config in "$pkgdir"/usr/lib/binfmt.d/*.conf; do
+    name=$(basename "${config%.conf}")
+    interpreter=$(cut -d: -f7 "$config")
+    if [[ $interpreter != /usr/bin/qemu-* ]]; then
+      error "Unexpected binfmt interpreter in $config: $interpreter"
+      return 1
+    fi
+    sed "s|:${interpreter}:|:${interpreter}-static:|" "$config" \
+      > "${config%.conf}-static.conf"
+    rm "$config"
+  done
+  _install_licenses
+}
