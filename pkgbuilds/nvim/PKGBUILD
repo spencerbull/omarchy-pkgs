@@ -1,0 +1,106 @@
+pkgname='nvim'
+_pkgname='neovim'
+pkgver=0.12.5
+pkgrel=1
+pkgdesc='Fork of Vim aiming to improve user experience, plugins, and GUIs'
+arch=('aarch64')
+url='https://neovim.io'
+license=(
+  'Apache-2.0'
+  'LicenseRef-vim'
+)
+depends=(
+  'glibc'
+  'gcc-libs'
+  'libluv'
+  'libtree-sitter.so'
+  'libunibilium.so'
+  'libutf8proc'
+  'libuv'
+  'libvterm>=0.3.3'
+  'lua51-lpeg'
+  'luajit'
+  'msgpack-c'
+  'tree-sitter'
+  'tree-sitter-c'
+  'tree-sitter-lua'
+  'tree-sitter-markdown'
+  'tree-sitter-query'
+  'tree-sitter-vim'
+  'tree-sitter-vimdoc'
+  'unibilium'
+)
+makedepends=(
+  'cmake'
+  'ninja'
+  'lua51-mpack'
+)
+optdepends=(
+  'python-pynvim: for Python plugin support (see :help python)'
+  'xclip: for clipboard support on X11 (or xsel) (see :help clipboard)'
+  'xsel: for clipboard support on X11 (or xclip) (see :help clipboard)'
+  'wl-clipboard: for clipboard support on Wayland (see :help clipboard)'
+)
+provides=(
+  "neovim=${pkgver}"
+  'vim-plugin-runtime'
+)
+conflicts=('neovim')
+backup=('etc/xdg/nvim/sysinit.vim')
+_commit='5885a30e1e1225349079e7a1c4a3848aa8e43e42'
+source=(
+  "${_pkgname}-${pkgver}.tar.gz::https://codeload.github.com/neovim/neovim/tar.gz/${_commit}"
+  'nvimdoc'
+  'nvimdoc.hook'
+)
+sha256sums=(
+  '314bb8d8695cc2c1c9b69e6c93df8c75108ca66588dfffb81c42369d2f85c90a'
+  '0881cf186965ac3d601c25866c7540f8d82064e7a84f5b644ca6a41b54c2c9a6'
+  '69794b783cb004ec9fe2bbe2d7ac347681701bbcb15304b0324d8ec95fbd6e81'
+)
+
+build() {
+  local cmake_options=(
+    -B build
+    -G Ninja
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    -DCMAKE_INSTALL_PREFIX=/usr
+    -DUSE_BUNDLED=OFF
+    -DENABLE_TRANSLATIONS=ON
+    -Wno-dev
+  )
+
+  cd "${_pkgname}-${_commit}"
+  cmake "${cmake_options[@]}"
+  cmake --build build --verbose
+}
+
+check() {
+  cd "${_pkgname}-${_commit}"
+  ./build/bin/nvim --version
+  ./build/bin/nvim --headless -u NONE -i NONE +q
+}
+
+package() {
+  install -Dm644 nvimdoc.hook -t "${pkgdir}/usr/share/libalpm/hooks/"
+  install -Dm755 nvimdoc -t "${pkgdir}/usr/share/libalpm/scripts/"
+
+  cd "${_pkgname}-${_commit}"
+  DESTDIR="${pkgdir}" cmake --install build
+
+  install -Dm644 LICENSE.txt -t "${pkgdir}/usr/share/licenses/${pkgname}/"
+  install -Dm644 runtime/nvim.desktop -t "${pkgdir}/usr/share/applications/"
+  install -Dm644 runtime/nvim.appdata.xml -t "${pkgdir}/usr/share/metainfo/"
+  install -Dm644 runtime/nvim.png -t "${pkgdir}/usr/share/pixmaps/"
+
+  ln -s /usr/lib/tree_sitter "${pkgdir}/usr/share/nvim/runtime/parser"
+
+  install -dm755 "${pkgdir}/etc/xdg/nvim"
+  echo 'source /usr/share/nvim/archlinux.lua' > "${pkgdir}/etc/xdg/nvim/sysinit.vim"
+
+  install -dm755 "${pkgdir}/usr/share/vim"
+  cat > "${pkgdir}/usr/share/nvim/archlinux.lua" <<'EOF'
+-- Include system-wide Vim runtime files in Neovim's runtime path.
+vim.opt.runtimepath:append({ '/usr/share/vim/vimfiles', '/usr/share/vim/vimfiles/after' })
+EOF
+}
