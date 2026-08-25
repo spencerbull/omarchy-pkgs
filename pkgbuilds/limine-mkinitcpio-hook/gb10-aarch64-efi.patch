@@ -51,6 +51,9 @@ index b56cc30..0936595 100644
  ### Load key=value config
  load_key_value_config() {
  	local file="$1"
+@@ -330 +334 @@ reset_enroll_config() {
+-	is_x64 || return 0
++	is_supported_uefi_arch || return 0
 @@ -342,7 +346,7 @@ reset_enroll_config() {
  
  ### Enroll Limine config into Limine binary file, then sign the binary.
