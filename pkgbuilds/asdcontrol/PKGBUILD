@@ -12,7 +12,6 @@ depends=('glibc' 'gcc-libs')
 makedepends=('make' 'gcc')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/omakasui/asdcontrol/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('3112a6d5fc51a204c96ef9d27187577c6efc80b952e37a77969efbd0124e81d3')
-install=asdcontrol.install
 
 build() {
   cd "$srcdir/asdcontrol-$pkgver"
@@ -25,8 +24,4 @@ package() {
   # Install the binary
   install -Dm755 asdcontrol "$pkgdir/usr/bin/asdcontrol"
 
-  # Install the sudoers file for passwordless execution
-  install -dm750 "$pkgdir/etc/sudoers.d"
-  echo "ALL ALL=(ALL) NOPASSWD: /usr/bin/asdcontrol" > "$pkgdir/etc/sudoers.d/asdcontrol"
-  chmod 440 "$pkgdir/etc/sudoers.d/asdcontrol"
 }
