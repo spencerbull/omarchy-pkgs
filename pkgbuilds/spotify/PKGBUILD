@@ -38,7 +38,7 @@ source_x86_64=("${pkgname}-${pkgver}-${_commit}-x86_64.deb::http://repository.sp
 source_aarch64=(
         'spotify-aarch64.sh'
         'spotify-aarch64.desktop'
-        'spotify.png::https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/spotify.png')
+        'spotify.png::https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@0f14e7261df700795a98594f3d51e507c123d27c/png/spotify.png')
 sha512sums=('2e16f7c7b09e9ecefaa11ab38eb7a792c62ae6f33d95ab1ff46d68995316324d8c5287b0d9ce142d1cf15158e61f594e930260abb8155467af8bc25779960615')
 sha512sums_x86_64=('902d9b8200d67e10a19ce5e34316ea14ed05e935fe5493c21f7a8db31b2ffc91375dd18a68734e781b815d57ac9e3aff36da79bce9ff6882a1f247542caab451'
                     'da48b628a4ea925dd8521133ebf364b261b11aed252d264dde6605d915cdb631919ffe672c58534bcdb60869e5d87a49a60a8198780b99517123f0031e83fdb1'
@@ -46,7 +46,7 @@ sha512sums_x86_64=('902d9b8200d67e10a19ce5e34316ea14ed05e935fe5493c21f7a8db31b2f
                     'SKIP'
                     'SKIP'
                     'SKIP')
-sha512sums_aarch64=('fcafb7b604845aca8d07690e4aa2509467a2d29377e511789f054202b8c41a7c91efe1457dbbce2ec0a04249ff7737f748574c91e87697a3fd6884475fb8a7c8'
+sha512sums_aarch64=('1228b86363c39405d6a1f8f4a55157b2902812bd9f0e4ddd84365010a533e89a7e5914d9494464da0f9dcfdeba13d1df9fb6cf502e0928e01342732eae2c5817'
                     '50d7f1593713d7fcb4fd06625362e8f158bfb96f82f4ddda26701ead33f9b39a9a30fcb590182844b85e1d8d4ba5fbafbed90c6fe60e83a77c0c4d355f9cb99f'
                     'f574d38363d97f7bf1e33f9532176dc99686e2eec7657bea3fe76238d3238f682da68cf10577af0556dd9a727832b79b10a2e1d401a20e906f5223d804e7f542')
 
