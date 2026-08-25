@@ -1,0 +1,50 @@
+diff --git a/resources/app.asar.unpacked/node_modules/btime/index.js b/resources/app.asar.unpacked/node_modules/btime/index.js
+index c28bd8e..6a4809c 100644
+--- a/resources/app.asar.unpacked/node_modules/btime/index.js
++++ b/resources/app.asar.unpacked/node_modules/btime/index.js
+@@ -7,8 +7,6 @@ var Node = {
+   process: process
+ };
+ 
+-var binding = require('./binding.node');
+-
+ function assertPath(key, value) {
+   if (typeof value !== 'string') {
+     throw new Error(key + ' must be a string');
+@@ -47,6 +45,7 @@ Btime.btime = function(path, btime) {
+   if (btime === undefined) return;
+   if (Node.process.platform === 'darwin' || Node.process.platform === 'win32') {
++    var binding = require('./binding.node');
+     let result = binding.btime(pathBuffer(path), btime);
+     if (result !== 0) {
+       throw new Error('(' + result + '), utimes(' + path + ')');
+     }
+diff --git a/resources/app.asar.unpacked/node_modules/get-fonts/index.js b/resources/app.asar.unpacked/node_modules/get-fonts/index.js
+index 3f4fd3d..d123aa9 100644
+--- a/resources/app.asar.unpacked/node_modules/get-fonts/index.js
++++ b/resources/app.asar.unpacked/node_modules/get-fonts/index.js
+@@ -1,7 +1,22 @@
+ 'use strict';
+ 
+-var binding = require('./binding.node');
++var execFile = require('child_process').execFile;
+ 
+ module.exports = {
+-  getFonts: () => binding.getFonts()
++  getFonts: () => new Promise((resolve, reject) => {
++    execFile('fc-list', ['--format', '%{family}\n'], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
++      if (error) {
++        reject(error);
++        return;
++      }
++
++      var fonts = stdout
++        .split('\n')
++        .flatMap((family) => family.split(','))
++        .map((family) => family.trim())
++        .filter(Boolean);
++
++      resolve(Array.from(new Set(fonts)));
++    });
++  })
+ }

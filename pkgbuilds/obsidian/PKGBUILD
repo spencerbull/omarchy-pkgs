@@ -1,0 +1,134 @@
+# Maintainer: Omarchy <https://omarchy.org>
+
+pkgname=obsidian
+pkgver=1.13.7
+pkgrel=1
+pkgdesc='A powerful knowledge base on top of a local folder of Markdown files'
+arch=('aarch64')
+url='https://obsidian.md'
+license=('LicenseRef-Obsidian')
+depends=(
+  'alsa-lib'
+  'at-spi2-core'
+  'bash'
+  'cairo'
+  'cups'
+  'dbus'
+  'expat'
+  'fontconfig'
+  'gcc-libs'
+  'glib2'
+  'glibc'
+  'gtk3'
+  'libdrm'
+  'libnotify'
+  'libsecret'
+  'libx11'
+  'libxcb'
+  'libxcomposite'
+  'libxdamage'
+  'libxext'
+  'libxfixes'
+  'libxkbcommon'
+  'libxrandr'
+  'libxss'
+  'libxtst'
+  'mesa'
+  'nspr'
+  'nss'
+  'pango'
+  'systemd-libs'
+  'util-linux-libs'
+  'xdg-utils'
+)
+optdepends=('libappindicator-gtk3: system tray support')
+checkdepends=('nodejs')
+options=('!strip')
+
+source=(
+  "https://github.com/obsidianmd/obsidian-releases/releases/download/v${pkgver}/obsidian-${pkgver}-arm64.tar.gz"
+  'obsidian-aarch64-native-addons.patch'
+  'obsidian.desktop'
+  'obsidian.sh'
+  'LICENSE-Obsidian'
+)
+sha256sums=(
+  '98aac34d1f132a35cf506fc3fa196d595dcdeefdebd44b0cc5faaa7a1a210de2'
+  '07b6e57a36550fc4e053ecf1cb5b5afbd2b7aa9bd7ed37d3d936223a576300ef'
+  '99c075af3f34cb358d6e93565686792c45562b17f8002fce0e8a63b83cbbe786'
+  '09f8805ac812dcf0d3e494aae955d56352dde4326b1d84fe76dd5073cf0ed863'
+  'd9fdc14f9c2fb95bb38310281268fdad413c1b49fa93213df3184f9b0ca1175c'
+)
+
+prepare() {
+  cd "${pkgname}-${pkgver}-arm64"
+
+  # Obsidian 1.13.7's official ARM64 tarball contains two x86-64 Node addons.
+  # Fail closed if a future artifact changes so this workaround is revisited
+  # instead of discarding native addons that upstream has fixed.
+  local addon
+  for addon in \
+    resources/app.asar.unpacked/node_modules/btime/binding.node \
+    resources/app.asar.unpacked/node_modules/get-fonts/binding.node; do
+    file "$addon" | grep -q 'x86-64' || {
+      printf 'Unexpected native addon architecture: %s\n' "$addon" >&2
+      return 1
+    }
+  done
+
+  patch -Np1 -i "${srcdir}/obsidian-aarch64-native-addons.patch"
+}
+
+check() {
+  cd "${pkgname}-${pkgver}-arm64"
+
+  node - <<'NODE'
+const assert = require('node:assert/strict');
+const base = './resources/app.asar.unpacked/node_modules';
+const btime = require(`${base}/btime`);
+const getFonts = require(`${base}/get-fonts`);
+
+assert.equal(typeof btime.btime, 'function');
+assert.doesNotThrow(() => btime.btime('/tmp/obsidian-package-probe'));
+assert.equal(typeof getFonts.getFonts, 'function');
+
+getFonts.getFonts().then((fonts) => {
+  assert.ok(Array.isArray(fonts));
+  assert.ok(fonts.length > 0);
+  assert.ok(fonts.every((font) => typeof font === 'string' && font.length > 0));
+  console.log(`Obsidian native-addon fallback probe: ${fonts.length} fonts`);
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+NODE
+}
+
+package() {
+  cd "${pkgname}-${pkgver}-arm64"
+
+  install -d "${pkgdir}/opt/obsidian"
+  cp -a . "${pkgdir}/opt/obsidian/"
+
+  # Neither addon can be loaded by an AArch64 process. The patched JavaScript
+  # preserves btime's documented Linux no-op and implements font enumeration
+  # through fontconfig, so do not ship misleading x86-64 objects.
+  rm \
+    "${pkgdir}/opt/obsidian/resources/app.asar.unpacked/node_modules/btime/binding.node" \
+    "${pkgdir}/opt/obsidian/resources/app.asar.unpacked/node_modules/get-fonts/binding.node"
+
+  chmod 4755 "${pkgdir}/opt/obsidian/chrome-sandbox"
+  install -Dm755 "${srcdir}/obsidian.sh" "${pkgdir}/usr/bin/obsidian"
+  ln -s /opt/obsidian/obsidian-cli "${pkgdir}/usr/bin/obsidian-cli"
+  install -Dm644 "${srcdir}/obsidian.desktop" \
+    "${pkgdir}/usr/share/applications/obsidian.desktop"
+  install -Dm644 resources/icon.png \
+    "${pkgdir}/usr/share/icons/hicolor/512x512/apps/obsidian.png"
+
+  install -Dm644 "${srcdir}/LICENSE-Obsidian" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-Obsidian"
+  install -Dm644 LICENSE.electron.txt \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.electron.txt"
+  install -Dm644 LICENSES.chromium.html \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSES.chromium.html"
+}
