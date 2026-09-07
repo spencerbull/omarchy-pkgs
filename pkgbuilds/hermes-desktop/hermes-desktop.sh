@@ -17,6 +17,7 @@ export HERMES_HOME
 root="$HERMES_HOME/hermes-agent"
 marker="$root/.omarchy-hermes-desktop"
 installer=/usr/share/hermes-desktop/install.sh
+seed=/usr/share/hermes-desktop/seed
 cli=("$root/venv/bin/python" "$root/hermes")
 
 desktop_executable() {
@@ -76,6 +77,7 @@ stage() {
 }
 
 install_desktop() {
+  local graphical=${1:-false}
   (( EUID != 0 )) || die "Run this installer as your desktop user, without sudo."
   mkdir -p "$HERMES_HOME"
   exec 9>"$HERMES_HOME/.omarchy-hermes-desktop.lock"
@@ -133,13 +135,15 @@ PY
       https://github.com/NousResearch/hermes-agent.git | git@github.com:NousResearch/hermes-agent.git) ;;
       *) die "Keeping the checkout's custom origin. Install its desktop with 'hermes desktop'." ;;
     esac
-    if [[ $legacy == true ]]; then
+    # GUI bootstrap updates existing Git checkouts and can hard-reset a
+    # divergent main. Admit only published history before giving it the root.
+    if [[ $legacy == true || $graphical == true ]]; then
       case "$(git -C "$root" rev-parse HEAD)" in
         e624e9fde561e1add9388384012b295fde669ade | 29112bef099274229cadff79cdff7bf7b99c4b77) ;;
         *)
           if [[ $(git -C "$root" symbolic-ref --short -q HEAD) != "main" ]] ||
             ! git -C "$root" merge-base --is-ancestor HEAD refs/remotes/origin/main; then
-            die "The legacy checkout has moved. Run 'hermes update', then 'hermes desktop'."
+            die "Keeping the checkout branch or unpublished commits. Run 'hermes desktop' from that installation."
           fi
           ;;
       esac
@@ -172,16 +176,23 @@ PY
     if ! git -C "$root" config --get-all remote.origin.fetch | grep -qxF "$refspec"; then
       git -C "$root" config --add remote.origin.fetch "$refspec"
     fi
-    git -C "$root" fetch origin "$refspec"
-    env -u PYTHONPATH -u PYTHONHOME "${cli[@]}" update --yes --branch main
+    if [[ $graphical == false ]]; then
+      git -C "$root" fetch origin "$refspec"
+      env -u PYTHONPATH -u PYTHONHOME "${cli[@]}" update --yes --branch main
+    fi
   elif [[ ! -e $root ]]; then
-    stage prerequisites
+    if [[ $graphical == false ]]; then stage prerequisites; fi
     # Publish only a complete clone with its ownership marker. An interrupted
     # clone stays aside for inspection and cannot block the next installation.
     local repository_dir
     repository_dir=$(mktemp -d "$HERMES_HOME/.omarchy-hermes-repository.XXXXXX")
     echo "Preparing the Hermes checkout in $repository_dir"
-    stage repository "$repository_dir/hermes-agent"
+    if [[ $graphical == true ]]; then
+      cp -a --reflink=auto "$seed" "$repository_dir/hermes-agent"
+      chmod -R u+w "$repository_dir/hermes-agent"
+    else
+      stage repository "$repository_dir/hermes-agent"
+    fi
     printf '/.omarchy-hermes-desktop\n' >>"$repository_dir/hermes-agent/.git/info/exclude"
     printf 'pending\n' >"$repository_dir/hermes-agent/.omarchy-hermes-desktop"
     mv -T --no-clobber "$repository_dir/hermes-agent" "$root"
@@ -191,6 +202,35 @@ PY
 
   if [[ $mise_predecessor == true ]]; then
     printf '%s\n' 'pipx:hermes-agent[extras=all]' >"$root/.git/omarchy-mise-predecessor"
+  fi
+
+  if [[ $graphical == true ]]; then
+    # Existing managed bootstraps may have a runtime but no writable desktop.
+    # Seed only the absent app; never replace a newer executable or source.
+    if ! desktop_executable >/dev/null; then
+      [[ ! -e $root/apps/desktop/release/linux-unpacked ]] || die "Keeping the incomplete desktop at $root/apps/desktop/release/linux-unpacked."
+      local desktop_dir
+      desktop_dir=$(mktemp -d "$root/.git/omarchy-desktop.XXXXXX")
+      cp -a --reflink=auto "$seed/apps/desktop/release/linux-unpacked" "$desktop_dir/"
+      chmod -R u+w "$desktop_dir/linux-unpacked"
+      mkdir -p "$root/apps/desktop/release"
+      mv -T --no-clobber "$desktop_dir/linux-unpacked" "$root/apps/desktop/release/linux-unpacked"
+      [[ ! -e $desktop_dir/linux-unpacked ]] || die "Keeping the desktop that appeared during setup."
+      rmdir "$desktop_dir"
+    fi
+    # The GUI owns bootstrap and cancellation. Keep the old launchers as a
+    # recovery copy until it succeeds; never race an installer with rollback.
+    graphical_existing=false
+    if [[ -f $root/.hermes-bootstrap-complete && -x ${cli[0]} ]] &&
+      timeout 15 env -u PYTHONPATH -u PYTHONHOME "${cli[0]}" -c 'import yaml; import dotenv; import hermes_cli.config' >/dev/null 2>&1; then
+      graphical_existing=true
+    fi
+    graphical_legacy=$graphical_existing
+    graphical_marker=$(stat -c '%d:%i:%y' "$root/.hermes-bootstrap-complete" 2>/dev/null || true)
+    printf 'pending\n' >"$marker"
+    graphical_setup=true
+    trap - EXIT INT TERM
+    return
   fi
 
   if [[ $legacy == false ]]; then
@@ -223,29 +263,31 @@ PY
 case "${1:-}" in
   --check) ready; exit ;;
   --install) install_desktop; exit ;;
-  --setup)
-    shift
-    if /usr/bin/hermes-desktop --install; then
-      setsid --fork /usr/bin/hermes-desktop "$@" >/dev/null 2>&1
-      exit
-    else
-      status=$?
-      echo "Hermes installation failed. Retry with: hermes-desktop --install" >&2
-      if [[ -t 0 ]]; then read -r -p 'Press Enter to close.'; fi
-      exit "$status"
-    fi
-    ;;
+  --setup) shift ;;
 esac
 
+graphical_setup=false
 if ! ready; then
-  if [[ -t 0 && -t 1 ]]; then
-    install_desktop
-  else
-    exec xdg-terminal-exec /usr/bin/hermes-desktop --setup "$@"
-  fi
+  install_desktop true
 fi
 
-export HERMES_DESKTOP_HERMES_ROOT="$root"
+# HERMES_HOME selects the native root. A developer source/Python override
+# bypasses GUI bootstrap and falls back to system Python before the venv exists.
+unset HERMES_DESKTOP_HERMES_ROOT HERMES_DESKTOP_PYTHON HERMES_DESKTOP_BOOTSTRAP HERMES_DESKTOP_BOOTSTRAP_SEED
+export HERMES_DESKTOP_IGNORE_EXISTING=1
+if [[ $graphical_setup == true && $graphical_existing == false ]]; then
+  # A cancelled first install can already import the CLI, even though it has
+  # never completed. The packaged app consumes this one-shot bootstrap request.
+  export HERMES_DESKTOP_BOOTSTRAP=1
+  seed_receipt="$root/.git/omarchy-desktop-seed"
+  if [[ -f $seed_receipt && ! -L $seed_receipt ]] &&
+    cmp -s "$seed_receipt" "$seed/.git/omarchy-desktop-seed"; then
+    seed_commit=$(cat "$seed_receipt")
+    if [[ $seed_commit =~ ^[0-9a-f]{40}$ && $(git -C "$root" rev-parse HEAD) == "$seed_commit" ]]; then
+      export HERMES_DESKTOP_BOOTSTRAP_SEED=$seed_commit
+    fi
+  fi
+fi
 export HERMES_DESKTOP_PASSWORD_STORE="${HERMES_DESKTOP_PASSWORD_STORE:-gnome-libsecret}"
 # Upstream desktop registration resolves its launcher through PATH.
 export PATH="$HOME/.local/bin:$PATH"
@@ -263,4 +305,51 @@ fi
 if unshare --user --map-root-user true 2>/dev/null; then
   flags+=(--disable-setuid-sandbox)
 fi
-exec "$(desktop_executable)" "${flags[@]}" "$@"
+if [[ $graphical_setup == false ]]; then
+  exec "$(desktop_executable)" "${flags[@]}" "$@"
+fi
+
+# Keep the installation lock until the GUI's native bootstrap has finished.
+# The app gets no lock descriptor: its updater must be able to outlive it.
+"$(desktop_executable)" "${flags[@]}" "$@" 9>&- &
+app_pid=$!
+(
+  while kill -0 "$app_pid" 2>/dev/null; do
+    # An existing healthy legacy runtime skips GUI bootstrap. Register its
+    # admitted CLI shims without reinstalling dependencies or building the app.
+    if [[ $graphical_legacy == true ]] &&
+      timeout 15 env -u PYTHONPATH -u PYTHONHOME "${cli[@]}" --version >/dev/null 2>&1; then
+      stage path
+      graphical_legacy=false
+    fi
+    # Electron adds desktopVersion after the final installer child exits.
+    # The installer's earlier marker alone must not finalize a cold GUI setup.
+    if { [[ $graphical_existing == true ]] || {
+      [[ $(stat -c '%d:%i:%y' "$root/.hermes-bootstrap-complete" 2>/dev/null || true) != "$graphical_marker" ]] && python -I -c '
+import json, sys
+try:
+    assert json.load(open(sys.argv[1])).get("desktopVersion")
+except (OSError, ValueError, AssertionError, AttributeError):
+    sys.exit(1)
+' "$root/.hermes-bootstrap-complete"; }; } && runtime_ready; then
+      # Keep the package desktop entry until a real native update builds and
+      # stamps the app. A premature `hermes desktop` entry would build on launch.
+      printf 'ready\n' >"$marker"
+      rm -rf "$install_backup"
+      exec 9>&-
+      if [[ -f $root/.git/omarchy-mise-predecessor ]] && command -v omarchy-install-hermes-cli >/dev/null 2>&1; then
+        omarchy-install-hermes-cli || echo 'Run omarchy-install-hermes-cli again to finish the old CLI cleanup.' >&2
+      fi
+      exit
+    fi
+    sleep 2
+  done
+  echo "Hermes setup did not finish. Previous CLI launchers are preserved in $install_backup." >&2
+  echo "Retry in Hermes, or finish setup from a terminal with: hermes-desktop --install" >&2
+) &
+completion_pid=$!
+exec 9>&-
+status=0
+wait "$app_pid" || status=$?
+wait "$completion_pid" || true
+exit "$status"

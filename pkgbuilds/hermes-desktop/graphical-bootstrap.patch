@@ -1,0 +1,800 @@
+diff --git a/apps/desktop/electron/bootstrap-runner.test.ts b/apps/desktop/electron/bootstrap-runner.test.ts
+index e94dcf3456..0bc83f4d8b 100644
+--- a/apps/desktop/electron/bootstrap-runner.test.ts
++++ b/apps/desktop/electron/bootstrap-runner.test.ts
+@@ -1,4 +1,5 @@
+ import assert from 'node:assert/strict'
++import { execFileSync } from 'node:child_process'
+ import fs from 'node:fs'
+ import os from 'node:os'
+ import path from 'node:path'
+@@ -81,6 +82,107 @@ test('existing checkout detection requires git metadata', () => {
+   }
+ })
+ 
++test
++  .skipIf(process.platform === 'win32')
++  .each([
++    'matching seed',
++    'missing seed',
++    'short seed',
++    'zero seed',
++    'different stamp',
++    'missing stamp',
++    'different HEAD'
++  ])('bootstrap skips only an already supplied matching repository: %s', async scenario => {
++  const home = mkTmpHome()
++  const root = path.join(home, 'hermes-agent')
++  const stages = ['prerequisites', 'repository', 'venv', 'path', 'complete']
++  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true })
++
++  // Exercise the real runner and subprocess protocol without downloading or
++  // installing anything. Each fixture stage records whether it actually ran.
++  fs.writeFileSync(
++    path.join(root, 'scripts', 'install.sh'),
++    `#!/bin/bash
++if [[ $1 == --manifest ]]; then
++  printf '%s\\n' '${JSON.stringify({ protocol_version: 1, stages: stages.map(name => ({ name })) })}'
++else
++  printf '%s\\n' "$2" >> "$HERMES_HOME/stages.log"
++  printf '{"ok":true,"stage":"%s"}\\n' "$2"
++fi
++`
++  )
++
++  const git = (...args: string[]) =>
++    execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
++
++  try {
++    git('init', '--quiet')
++    git('add', 'scripts/install.sh')
++    git(
++      '-c',
++      'user.name=Bootstrap Test',
++      '-c',
++      'user.email=bootstrap@example.invalid',
++      '-c',
++      'commit.gpgsign=false',
++      'commit',
++      '--quiet',
++      '-m',
++      'fixture'
++    )
++    const head = git('rev-parse', 'HEAD')
++    const other = head === 'a'.repeat(40) ? 'b'.repeat(40) : 'a'.repeat(40)
++
++    const seedCommit =
++      scenario === 'missing seed'
++        ? undefined
++        : scenario === 'short seed'
++          ? head.slice(0, 7)
++          : scenario === 'zero seed'
++            ? ZERO_COMMIT
++            : scenario === 'different HEAD'
++              ? other
++              : head
++
++    const installStamp =
++      scenario === 'missing stamp'
++        ? null
++        : {
++            commit: scenario === 'different stamp' || scenario === 'different HEAD' ? other : head,
++            branch: 'main'
++          }
++
++    const events = []
++
++    const result = await runBootstrap({
++      installStamp,
++      seedCommit,
++      activeRoot: root,
++      sourceRepoRoot: root,
++      hermesHome: home,
++      onEvent: event => events.push(event)
++    })
++
++    assert.equal(result.ok, true)
++    const skipped = scenario === 'matching seed'
++    assert.deepEqual(
++      fs.readFileSync(path.join(home, 'stages.log'), 'utf8').trim().split('\n'),
++      skipped ? stages.filter(stage => stage !== 'repository') : stages
++    )
++    assert.equal(
++      events.some(event => event.type === 'stage' && event.name === 'repository' && event.state === 'skipped'),
++      skipped
++    )
++    assert.equal(git('rev-parse', 'HEAD'), head, 'the hint never rewrites the repository')
++
++    if (skipped) {
++      assert.equal(result.marker.pinnedCommit, head)
++    }
++  } finally {
++    fs.rmSync(home, { recursive: true, force: true })
++  }
++})
++
+ test('fresh bootstrap args include the packaged commit pin', () => {
+   const installStamp = { commit: 'a'.repeat(40), branch: 'main' }
+ 
+diff --git a/apps/desktop/electron/bootstrap-runner.ts b/apps/desktop/electron/bootstrap-runner.ts
+index dee008ff5d..0633a28b1b 100644
+--- a/apps/desktop/electron/bootstrap-runner.ts
++++ b/apps/desktop/electron/bootstrap-runner.ts
+@@ -859,6 +859,7 @@ function openRunLog(logRoot) {
+ async function runBootstrap(opts) {
+   const {
+     installStamp,
++    seedCommit,
+     activeRoot,
+     sourceRepoRoot,
+     hermesHome,
+@@ -958,6 +959,29 @@ async function runBootstrap(opts) {
+         return { ok: false, cancelled: true }
+       }
+ 
++      // A package can supply the matching source alongside its desktop build.
++      // Pulling this pristine seed to main would leave the source newer than the
++      // running desktop and make the updater incorrectly report "up to date".
++      // Recheck HEAD here; this hint never resets or replaces an existing repo.
++      if (
++        stage.name === 'repository' &&
++        typeof seedCommit === 'string' &&
++        /^[0-9a-f]{40}$/.test(seedCommit) &&
++        isPinnedCommit(seedCommit) &&
++        seedCommit === installStamp?.commit &&
++        seedCommit === resolveCheckoutHead(activeRoot)
++      ) {
++        emit({
++          type: 'stage',
++          name: stage.name,
++          state: 'skipped',
++          durationMs: 0,
++          json: { ok: true, stage: stage.name, skipped: true, reason: 'Source already matches the packaged desktop' }
++        })
++
++        continue
++      }
++
+       const ev = await runStage({
+         scriptPath: scriptInfo.path,
+         installerKind,
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 5116cdb7bc..21f76b84bf 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -80,6 +80,7 @@ import {
+   resolveLinuxPasswordStore
+ } from './bootstrap-platform'
+ import { decideBootstrapRepair } from './bootstrap-repair-guard'
++import { consumeBootstrapRequest, consumeBootstrapSeed } from './bootstrap-request'
+ import { runBootstrap } from './bootstrap-runner'
+ import {
+   BROWSER_WINDOW_HEIGHT,
+@@ -1577,7 +1578,8 @@ let bootstrapAbortController = null
+ // problem was a transient backend error (#72166). Intent now lives here, so
+ // repair can force the installer without destroying provenance about how the
+ // install was created. Cleared once the reinstall is under way.
+-let bootstrapRepairRequested = false
++let bootstrapRepairRequested = consumeBootstrapRequest(process.env)
++const bootstrapSeedCommit = consumeBootstrapSeed(process.env)
+ // Counter for in-flight repair attempts. Reset on a clean boot completion
+ // (see runBootstrap -> ensureRuntime resolve path). Each successive repair
+ // in the same failure episode increments this; once it crosses
+@@ -5128,6 +5130,7 @@ async function ensureRuntime(backend) {
+ 
+     const bootstrapResult = await runBootstrap({
+       installStamp: backend.installStamp,
++      seedCommit: bootstrapSeedCommit,
+       activeRoot: backend.activeRoot,
+       sourceRepoRoot: SOURCE_REPO_ROOT,
+       hermesHome: HERMES_HOME,
+diff --git a/apps/desktop/src/app/gateway/hooks/use-gateway-boot.test.tsx b/apps/desktop/src/app/gateway/hooks/use-gateway-boot.test.tsx
+index 58a4389fb8..6b2c20725f 100644
+--- a/apps/desktop/src/app/gateway/hooks/use-gateway-boot.test.tsx
++++ b/apps/desktop/src/app/gateway/hooks/use-gateway-boot.test.tsx
+@@ -1,7 +1,7 @@
+ import { act, cleanup, render } from '@testing-library/react'
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+ 
+-import type { DesktopConnectionsRegistry } from '@/global'
++import type { DesktopBootstrapEvent, DesktopConnectionsRegistry } from '@/global'
+ import { createClientSessionState } from '@/lib/chat-runtime'
+ import { $desktopBoot } from '@/store/boot'
+ import {
+@@ -1230,6 +1230,44 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () =>
+     expect($desktopBoot.get().error).toBeTruthy()
+   })
+ 
++  it('initial installation can outlive the backend deadline without poisoning boot', async () => {
++    let installing = true
++    const listeners = new Set<(event: DesktopBootstrapEvent) => void>()
++    const connection = deferred<typeof primaryConn>()
++
++    const desktop = {
++      ...fakeDesktop(),
++      getBootstrapState: vi.fn(async () => ({ active: installing, setupChoice: null })),
++      onBootstrapEvent: (listener: (event: DesktopBootstrapEvent) => void) => {
++        listeners.add(listener)
++
++        return () => void listeners.delete(listener)
++      }
++    }
++
++    desktop.getConnection.mockImplementation(() => connection.promise)
++    ;(window as { hermesDesktop?: unknown }).hermesDesktop = desktop
++
++    render(<Harness />)
++    await act(async () => {
++      await vi.advanceTimersByTimeAsync(120_000)
++    })
++    expect($desktopBoot.get().error).toBeNull()
++    expect(desktop.getConnection).toHaveBeenCalledTimes(1)
++
++    installing = false
++
++    for (const listener of listeners) {
++      listener({ type: 'complete', marker: {} })
++    }
++
++    connection.resolve(primaryConn)
++    await flushAsync()
++    expect($connection.get()).toMatchObject(primaryConn)
++    expect($desktopBoot.get().error).toBeNull()
++    expect(listeners.size).toBe(0)
++  })
++
+   it('softSwitch(): a getConnection() that hangs on a connection-apply switch does not latch $gatewaySwitching forever (#93454)', async () => {
+     // Repro: main applies a new connection (onConnectionApplied), softSwitch()
+     // re-dials via getConnection(), and the IPC round-trip wedges. Without an
+diff --git a/apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts b/apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts
+index f5ee2ca66c..510ce99af9 100644
+--- a/apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts
++++ b/apps/desktop/src/app/gateway/hooks/use-gateway-boot.ts
+@@ -5,10 +5,11 @@ import { shouldApplyPostBootProgressError } from '@/components/boot-failure-reau
+ import type { HermesConnection } from '@/global'
+ import { HermesGateway } from '@/hermes'
+ import { translateNow } from '@/i18n'
++import { withBackendBootTimeout } from '@/lib/backend-boot-timeout'
+ import { desktopDefaultCwd } from '@/lib/desktop-fs'
+ import { decideLivenessForceClose, LIVENESS_REPROBE_DELAY_MS } from '@/lib/gateway-liveness-policy'
+ import { reconnectBackoffDelayMs } from '@/lib/reconnect-backoff'
+-import { BACKEND_BOOT_WAIT_TIMEOUT_MS, RECONNECT_ATTEMPT_TIMEOUT_MS, withTimeout } from '@/lib/with-timeout'
++import { RECONNECT_ATTEMPT_TIMEOUT_MS, withTimeout } from '@/lib/with-timeout'
+ import {
+   $desktopBoot,
+   applyDesktopBootProgress,
+@@ -199,6 +200,8 @@ export function useGatewayBoot({
+       return () => void (cancelled = true)
+     }
+ 
++    const bootWaitAbort = new AbortController()
++
+     // Store-driven switches (Sessions switcher → selectConnection) commit
+     // through beginGatewaySwitch(), which runs this window's machine-context
+     // reset — the same one a Settings apply (softSwitch below) runs. One owner,
+@@ -606,10 +609,11 @@ export function useGatewayBoot({
+         // the `finally` below only runs once this promise settles. Uses the
+         // shared backend-boot budget rather than the reconnect budget because
+         // ensureBackend may cold-spawn a pooled helper backend here.
+-        const conn = await withTimeout(
++        const conn = await withBackendBootTimeout(
+           desktop.getConnection(windowProfileOverride() ?? undefined),
+-          BACKEND_BOOT_WAIT_TIMEOUT_MS,
+-          'Timed out reconnecting to Hermes backend'
++          desktop,
++          'Timed out reconnecting to Hermes backend',
++          bootWaitAbort.signal
+         )
+ 
+         if (!ownsSwitch()) {
+@@ -988,10 +992,11 @@ export function useGatewayBoot({
+         // round-trip must not hang "Starting Hermes…" forever. Initial boot
+         // rides out a full backend cold spawn, so it gets the shared 45s
+         // backend-boot budget, not the 20s reconnect budget.
+-        const conn = await withTimeout(
++        const conn = await withBackendBootTimeout(
+           desktop.getConnection(windowProfileOverride() ?? undefined),
+-          BACKEND_BOOT_WAIT_TIMEOUT_MS,
+-          'Timed out connecting to Hermes backend'
++          desktop,
++          'Timed out connecting to Hermes backend',
++          bootWaitAbort.signal
+         )
+ 
+         if (cancelled) {
+@@ -1147,6 +1152,7 @@ export function useGatewayBoot({
+ 
+     return () => {
+       cancelled = true
++      bootWaitAbort.abort()
+       offSwitchLifecycle()
+       endGatewaySwitch()
+       clearReconnectTimer()
+diff --git a/apps/desktop/src/store/connections.test.ts b/apps/desktop/src/store/connections.test.ts
+index edd9764dd8..273bec98ac 100644
+--- a/apps/desktop/src/store/connections.test.ts
++++ b/apps/desktop/src/store/connections.test.ts
+@@ -779,6 +779,28 @@ describe('selectConnection', () => {
+     expect($showAllProfiles.get()).toBe(true)
+   })
+ 
++  it('bootstrap does not expire descriptor restoration and start a duplicate connection', async () => {
++    vi.useFakeTimers()
++
++    try {
++      Object.assign(window.hermesDesktop!, {
++        getBootstrapState: vi.fn(async () => ({ active: true, setupChoice: null }))
++      })
++      list.mockResolvedValueOnce({ ...registry, lastUsed: 'homelab', launchMode: 'last-used' })
++      const restoring = initializeConnectionsRegistry()
++
++      await vi.advanceTimersByTimeAsync(120_000)
++      expect(ensureGatewayAgent).not.toHaveBeenCalled()
++
++      $connection.set({ connectionId: 'homelab', mode: 'remote' })
++      await restoring
++      expect(ensureGatewayAgent).not.toHaveBeenCalled()
++      expect(setLastUsed).toHaveBeenCalledWith('homelab')
++    } finally {
++      vi.useRealTimers()
++    }
++  })
++
+   it('boot restore proceeds after the descriptor wait deadline (bounded wait)', async () => {
+     // A primary that never publishes (spawn failure, dead SSH target) must
+     // not strand the registry restore forever: after the deadline the restore
+diff --git a/apps/desktop/src/store/connections.ts b/apps/desktop/src/store/connections.ts
+index 7951e3bbe2..46c24ce0d3 100644
+--- a/apps/desktop/src/store/connections.ts
++++ b/apps/desktop/src/store/connections.ts
+@@ -1,8 +1,9 @@
+ import { atom, computed } from 'nanostores'
+ 
+ import type { DesktopConnectionsRegistry } from '@/global'
++import { withBackendBootTimeout } from '@/lib/backend-boot-timeout'
+ import { persistStringRecord, storedStringRecord } from '@/lib/storage'
+-import { BACKEND_BOOT_WAIT_TIMEOUT_MS, isTimeoutError, withTimeout } from '@/lib/with-timeout'
++import { isTimeoutError, withTimeout } from '@/lib/with-timeout'
+ import { $connectionsRegistry } from '@/store/connection-registry-state'
+ import {
+   beginGatewaySwitch,
+@@ -32,11 +33,6 @@ const LAST_PROFILE_STORAGE_KEY = 'hermes.desktop.lastProfileByConnection'
+ const SWITCH_DIAL_TIMEOUT_MS = 20_000
+ const SWITCH_COMMIT_TIMEOUT_MS = 20_000
+ const SWITCH_REMEMBER_TIMEOUT_MS = 5_000
+-// Matches the primary spawn budget: a healthy cold boot publishes well within
+-// this; anything longer means the primary is not coming and the registry
+-// restore should stop waiting for it. Shared constant so the boot-class
+-// budgets can't drift apart (see with-timeout.ts).
+-const BOOT_DESCRIPTOR_WAIT_TIMEOUT_MS = BACKEND_BOOT_WAIT_TIMEOUT_MS
+ 
+ export { $connectionsRegistry } from '@/store/connection-registry-state'
+ 
+@@ -170,9 +166,9 @@ function waitForInitialConnection(): Promise<void> {
+     })
+   })
+ 
+-  return withTimeout(
++  return withBackendBootTimeout(
+     published,
+-    BOOT_DESCRIPTOR_WAIT_TIMEOUT_MS,
++    window.hermesDesktop,
+     'Timed out waiting for the primary connection descriptor'
+   ).catch(error => {
+     unlisten?.()
+diff --git a/apps/desktop/electron/bootstrap-request.test.ts b/apps/desktop/electron/bootstrap-request.test.ts
+new file mode 100644
+index 0000000000..29d5acd26d
+--- /dev/null
++++ b/apps/desktop/electron/bootstrap-request.test.ts
+@@ -0,0 +1,37 @@
++import { expect, test } from 'vitest'
++
++import { consumeBootstrapRequest, consumeBootstrapSeed } from './bootstrap-request'
++
++test('the launcher request is consumed before an updater can inherit it', () => {
++  const env = { HERMES_DESKTOP_BOOTSTRAP: '1', HERMES_HOME: '/tmp/hermes' }
++
++  expect(consumeBootstrapRequest(env)).toBe(true)
++  expect(consumeBootstrapRequest({ ...env })).toBe(false)
++  expect(env).toEqual({ HERMES_HOME: '/tmp/hermes' })
++})
++
++test.each([undefined, '', '0', 'true'])('only the explicit launcher opt-in forces bootstrap (%s)', value => {
++  const env = { HERMES_DESKTOP_BOOTSTRAP: value }
++
++  expect(consumeBootstrapRequest(env)).toBe(false)
++  expect(env).toEqual({})
++})
++
++test('the seed hint is consumed before an updater can inherit it', () => {
++  const commit = 'a'.repeat(40)
++  const env = { HERMES_DESKTOP_BOOTSTRAP_SEED: commit, HERMES_HOME: '/tmp/hermes' }
++
++  expect(consumeBootstrapSeed(env)).toBe(commit)
++  expect(consumeBootstrapSeed({ ...env })).toBeNull()
++  expect(env).toEqual({ HERMES_HOME: '/tmp/hermes' })
++})
++
++test.each([undefined, '', 'main', 'a'.repeat(7), 'a'.repeat(41), '0'.repeat(40), 'g'.repeat(40)])(
++  'invalid seed hints are consumed without enabling the shortcut (%s)',
++  value => {
++    const env = { HERMES_DESKTOP_BOOTSTRAP_SEED: value }
++
++    expect(consumeBootstrapSeed(env)).toBeNull()
++    expect(env).toEqual({})
++  }
++)
+diff --git a/apps/desktop/electron/bootstrap-request.ts b/apps/desktop/electron/bootstrap-request.ts
+new file mode 100644
+index 0000000000..04d510594b
+--- /dev/null
++++ b/apps/desktop/electron/bootstrap-request.ts
+@@ -0,0 +1,18 @@
++/** A package launcher can resume an interrupted first install through the GUI.
++ * Consume the request before spawning children so an updater/relaunch cannot
++ * inherit it and reinstall an otherwise healthy runtime. */
++export function consumeBootstrapRequest(env: Record<string, string | undefined>): boolean {
++  const requested = env.HERMES_DESKTOP_BOOTSTRAP === '1'
++  delete env.HERMES_DESKTOP_BOOTSTRAP
++
++  return requested
++}
++
++/** The bundled checkout is usable only when the runner also verifies its HEAD
++ * against the desktop's install stamp. Never forward this hint to updates. */
++export function consumeBootstrapSeed(env: Record<string, string | undefined>): string | null {
++  const commit = env.HERMES_DESKTOP_BOOTSTRAP_SEED
++  delete env.HERMES_DESKTOP_BOOTSTRAP_SEED
++
++  return typeof commit === 'string' && /^[0-9a-f]{40}$/.test(commit) && !/^0{40}$/.test(commit) ? commit : null
++}
+diff --git a/apps/desktop/src/lib/backend-boot-timeout.test.ts b/apps/desktop/src/lib/backend-boot-timeout.test.ts
+new file mode 100644
+index 0000000000..bc483ba513
+--- /dev/null
++++ b/apps/desktop/src/lib/backend-boot-timeout.test.ts
+@@ -0,0 +1,168 @@
++import { afterEach, beforeEach, expect, test, vi } from 'vitest'
++
++import type { DesktopBootstrapEvent, DesktopBootstrapState } from '@/global'
++
++import { deferred } from '../test/deferred'
++
++import { withBackendBootTimeout } from './backend-boot-timeout'
++import { BACKEND_BOOT_WAIT_TIMEOUT_MS, RECONNECT_ATTEMPT_TIMEOUT_MS, TimeoutError } from './with-timeout'
++
++function bridge(initial: Partial<DesktopBootstrapState> = {}) {
++  const state: DesktopBootstrapState = {
++    active: false,
++    manifest: null,
++    stages: {},
++    error: null,
++    log: [],
++    startedAt: null,
++    completedAt: null,
++    setupChoice: null,
++    unsupportedPlatform: null,
++    ...initial
++  }
++
++  const listeners = new Set<(event: DesktopBootstrapEvent) => void>()
++
++  const desktop = {
++    getBootstrapState: vi.fn(async () => ({ ...state })),
++    onBootstrapEvent: vi.fn((listener: (event: DesktopBootstrapEvent) => void) => {
++      listeners.add(listener)
++
++      return () => void listeners.delete(listener)
++    })
++  }
++
++  return {
++    desktop,
++    state,
++    listeners,
++    emit: (event: DesktopBootstrapEvent) => {
++      state.active = event.type === 'manifest'
++      state.setupChoice =
++        event.type === 'setup-choice' && event.active ? { platform: 'linux', activeRoot: '/tmp/hermes' } : null
++
++      for (const listener of listeners) {
++        listener(event)
++      }
++    }
++  }
++}
++
++beforeEach(() => vi.useFakeTimers())
++afterEach(() => vi.useRealTimers())
++
++test.each<DesktopBootstrapEvent>([
++  { type: 'complete', marker: {} },
++  { type: 'failed', error: 'cancelled by user' },
++  { type: 'failed', error: 'dependency installation failed' },
++  { type: 'dismissed' },
++  { type: 'setup-choice', active: false }
++])('preserves the remaining backend budget across setup and resumes on $type', async event => {
++  const h = bridge()
++  const work = deferred<void>()
++  const settled = vi.fn()
++  const result = withBackendBootTimeout(work.promise, h.desktop, 'backend stalled').catch(settled)
++  await vi.advanceTimersByTimeAsync(10_000)
++  h.emit({ type: 'manifest', stages: [], protocolVersion: 1 })
++  await vi.advanceTimersByTimeAsync(BACKEND_BOOT_WAIT_TIMEOUT_MS * 2)
++  expect(settled).not.toHaveBeenCalled()
++  h.emit(event)
++  await vi.advanceTimersByTimeAsync(BACKEND_BOOT_WAIT_TIMEOUT_MS - 10_000 - 1)
++  expect(settled).not.toHaveBeenCalled()
++  await vi.advanceTimersByTimeAsync(1)
++  await result
++  expect(settled).toHaveBeenCalledWith(expect.any(TimeoutError))
++  expect(h.listeners.size).toBe(0)
++  expect(vi.getTimerCount()).toBe(0)
++})
++
++test('an initial install choice can remain open and resolving the backend cleans up observation', async () => {
++  const h = bridge({ setupChoice: { platform: 'linux', activeRoot: '/tmp/hermes' } })
++  const work = deferred<string>()
++  const result = withBackendBootTimeout(work.promise, h.desktop, 'backend stalled')
++  await vi.advanceTimersByTimeAsync(BACKEND_BOOT_WAIT_TIMEOUT_MS * 3)
++  work.resolve('connected')
++  await expect(result).resolves.toBe('connected')
++  expect(h.listeners.size).toBe(0)
++  expect(vi.getTimerCount()).toBe(0)
++})
++
++test.each([true, false])(
++  'a stale initial snapshot cannot replace newer live state (snapshot active=%s)',
++  async active => {
++    const h = bridge()
++    const snapshot = deferred<DesktopBootstrapState>()
++    h.desktop.getBootstrapState.mockImplementationOnce(() => snapshot.promise)
++    const work = deferred<void>()
++    const settled = vi.fn()
++    const result = withBackendBootTimeout(work.promise, h.desktop, 'backend stalled').catch(settled)
++    h.emit(active ? { type: 'complete', marker: {} } : { type: 'manifest', stages: [], protocolVersion: 1 })
++    snapshot.resolve({ ...h.state, active })
++    await vi.advanceTimersByTimeAsync(BACKEND_BOOT_WAIT_TIMEOUT_MS)
++    expect(settled).toHaveBeenCalledTimes(active ? 1 : 0)
++    work.resolve()
++    await result
++    expect(h.listeners.size).toBe(0)
++    expect(vi.getTimerCount()).toBe(0)
++  }
++)
++
++test('a main process that wedges during bootstrap loses its pause lease and still times out', async () => {
++  const h = bridge({ active: true })
++  h.desktop.getBootstrapState
++    .mockResolvedValueOnce({ ...h.state })
++    .mockImplementation(() => new Promise(() => undefined))
++  const settled = vi.fn()
++  const result = withBackendBootTimeout(new Promise(() => undefined), h.desktop, 'backend stalled').catch(settled)
++  await vi.advanceTimersByTimeAsync(RECONNECT_ATTEMPT_TIMEOUT_MS + BACKEND_BOOT_WAIT_TIMEOUT_MS - 1)
++  expect(settled).not.toHaveBeenCalled()
++  await vi.advanceTimersByTimeAsync(1)
++  await result
++  expect(settled).toHaveBeenCalledWith(expect.any(TimeoutError))
++  expect(h.listeners.size).toBe(0)
++  expect(vi.getTimerCount()).toBe(0)
++})
++
++test.each(['absent', 'rejected', 'wedged'])(
++  'unavailable bootstrap IPC retains the ordinary deadline (%s)',
++  async failure => {
++    const h = bridge()
++    h.desktop.getBootstrapState.mockImplementation(() =>
++      failure === 'rejected' ? Promise.reject(new Error('IPC unavailable')) : new Promise(() => undefined)
++    )
++
++    const result = withBackendBootTimeout(
++      new Promise(() => undefined),
++      failure === 'absent' ? undefined : h.desktop,
++      'backend stalled'
++    )
++
++    const rejection = expect(result).rejects.toBeInstanceOf(TimeoutError)
++    await vi.advanceTimersByTimeAsync(BACKEND_BOOT_WAIT_TIMEOUT_MS)
++    await rejection
++    expect(vi.getTimerCount()).toBe(0)
++  }
++)
++
++test.each(['abort', 'reject'])(
++  'a cancelled owner or failed backend releases paused observation (%s)',
++  async outcome => {
++    const h = bridge({ active: true })
++    const work = deferred<void>()
++    const owner = new AbortController()
++    const result = withBackendBootTimeout(work.promise, h.desktop, 'backend stalled', owner.signal)
++    const error = new Error(outcome)
++    const rejection = expect(result).rejects.toBe(error)
++    await vi.advanceTimersByTimeAsync(1)
++
++    if (outcome === 'abort') {
++      owner.abort(error)
++    } else {
++      work.reject(error)
++    }
++
++    await rejection
++    expect(h.listeners.size).toBe(0)
++    expect(vi.getTimerCount()).toBe(0)
++  }
++)
+diff --git a/apps/desktop/src/lib/backend-boot-timeout.ts b/apps/desktop/src/lib/backend-boot-timeout.ts
+new file mode 100644
+index 0000000000..300dca0d05
+--- /dev/null
++++ b/apps/desktop/src/lib/backend-boot-timeout.ts
+@@ -0,0 +1,169 @@
++import type { DesktopBootstrapEvent } from '@/global'
++
++import { BACKEND_BOOT_WAIT_TIMEOUT_MS, RECONNECT_ATTEMPT_TIMEOUT_MS, TimeoutError } from './with-timeout'
++
++type BootstrapBridge = Partial<Pick<NonNullable<Window['hermesDesktop']>, 'getBootstrapState' | 'onBootstrapEvent'>>
++
++/** Bootstrap and the initial install choice precede backend startup. Count
++ * only backend time against its normal deadline. A paused deadline needs
++ * fresh events or responsive state IPC; a wedged main process still times out. */
++export function withBackendBootTimeout<T>(
++  promise: Promise<T>,
++  desktop: BootstrapBridge | undefined,
++  message: string,
++  signal?: AbortSignal
++): Promise<T> {
++  return new Promise<T>((resolve, reject) => {
++    let settled = false
++    let paused = false
++    let remaining = BACKEND_BOOT_WAIT_TIMEOUT_MS
++    let resumedAt = performance.now()
++    let revision = 0
++    let reading = false
++    let budgetTimer: ReturnType<typeof setTimeout> | undefined
++    let leaseTimer: ReturnType<typeof setTimeout> | undefined
++    let pollTimer: ReturnType<typeof setInterval> | undefined
++    let unlisten: (() => void) | undefined
++
++    const cleanup = () => {
++      clearTimeout(budgetTimer)
++      clearTimeout(leaseTimer)
++      clearInterval(pollTimer)
++      unlisten?.()
++      signal?.removeEventListener('abort', abort)
++    }
++
++    const fail = (error: unknown) => {
++      if (settled) {
++        return
++      }
++
++      settled = true
++      cleanup()
++      reject(error)
++    }
++
++    const abort = () => fail(signal?.reason ?? new DOMException('Backend wait cancelled', 'AbortError'))
++
++    const armBudget = () => {
++      resumedAt = performance.now()
++      budgetTimer = setTimeout(() => fail(new TimeoutError(message)), Math.max(0, remaining))
++    }
++
++    const update = (nextPaused: boolean) => {
++      if (settled) {
++        return
++      }
++
++      clearTimeout(leaseTimer)
++
++      if (nextPaused !== paused) {
++        if (nextPaused) {
++          remaining -= performance.now() - resumedAt
++          clearTimeout(budgetTimer)
++        } else {
++          armBudget()
++        }
++
++        paused = nextPaused
++      }
++
++      if (paused) {
++        leaseTimer = setTimeout(() => {
++          revision += 1 // A late snapshot from before this wedge is stale.
++          update(false)
++        }, RECONNECT_ATTEMPT_TIMEOUT_MS)
++      }
++    }
++
++    const onEvent = (event: DesktopBootstrapEvent) => {
++      revision += 1
++
++      switch (event.type) {
++        case 'manifest':
++          update(true)
++
++          break
++
++        case 'setup-choice':
++          update(event.active)
++
++          break
++
++        case 'stage':
++          update(event.state !== 'failed')
++
++          break
++
++        case 'complete':
++
++        case 'failed':
++
++        case 'dismissed':
++
++        case 'unsupported-platform':
++          update(false)
++
++          break
++
++        case 'log':
++          update(paused)
++      }
++    }
++
++    const refresh = async () => {
++      if (settled || reading || !desktop?.getBootstrapState) {
++        return
++      }
++
++      reading = true
++      const observedRevision = revision
++
++      try {
++        const state = await desktop.getBootstrapState()
++
++        if (!settled && observedRevision === revision) {
++          update(state.active || Boolean(state.setupChoice))
++        }
++      } catch {
++        if (observedRevision === revision) {
++          update(false)
++        }
++      } finally {
++        reading = false
++      }
++    }
++
++    armBudget()
++    signal?.addEventListener('abort', abort, { once: true })
++
++    if (signal?.aborted) {
++      abort()
++    }
++
++    if (!settled) {
++      // Subscribe first: a slow initial snapshot must never overwrite a newer
++      // live completion, cancellation, or bootstrap-start event.
++      try {
++        unlisten = desktop?.onBootstrapEvent?.(onEvent)
++      } catch {
++        // Older/missing IPC keeps the ordinary bounded backend wait.
++      }
++
++      if (desktop?.getBootstrapState) {
++        pollTimer = setInterval(() => void refresh(), 5_000)
++        void refresh()
++      }
++    }
++
++    Promise.resolve(promise).then(value => {
++      if (settled) {
++        return
++      }
++
++      settled = true
++      cleanup()
++      resolve(value)
++    }, fail)
++  })
++}

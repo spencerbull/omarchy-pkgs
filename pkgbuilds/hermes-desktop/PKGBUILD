@@ -2,14 +2,14 @@
 
 pkgname=hermes-desktop
 pkgver=2026.8.31
-pkgrel=1
-pkgdesc='Installer and launcher for the self-updating Hermes desktop'
+pkgrel=2
+pkgdesc='Native desktop shell for the self-updating Hermes Agent'
 arch=('x86_64')
 url='https://github.com/NousResearch/hermes-agent'
 license=('MIT')
 
-# Hermes builds its desktop under the user's runtime so both the app and CLI
-# can update it. The compiler and Electron libraries must survive installation.
+# The package ships the first desktop; native updates rebuild it alongside the
+# user's runtime, so the compiler and Electron libraries remain dependencies.
 depends=(
   'alsa-lib'
   'at-spi2-core'
@@ -54,25 +54,70 @@ depends=(
 
 makedepends=('imagemagick')
 
-# Snapshot the bootstrap installer, including upstream's Linux sandbox fixes.
-# Only installation uses it; updates belong to the native runtime on main.
+# Electron bundles prebuilt binaries that stripping corrupts.
+options=('!strip' '!debug')
+
+# Build the first desktop from a fixed upstream commit. A complete Git seed
+# lets the app bootstrap and update its writable copy using upstream code.
 _commit=245e48008fa814b3251f50755eb656bd9fb86cb1
-source=("install-${_commit}.sh::https://raw.githubusercontent.com/NousResearch/hermes-agent/${_commit}/scripts/install.sh"
-        "LICENSE-${_commit}::https://raw.githubusercontent.com/NousResearch/hermes-agent/${_commit}/LICENSE"
+source=("hermes-agent::git+${url}.git#commit=${_commit}"
+        'graphical-bootstrap.patch'
         'hermes-desktop.sh'
         'hermes-desktop.desktop'
         'hermes-desktop.png')
-sha256sums=('5854b15670b51a8daae8f59ddfa917062de9f74be261eb73b4b8d719710f8968'
-            '821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6'
-            '27040084e691421dc1748e7646ae7ee79d5777e8ee1e1ec7581a68432d4a29c4'
+sha256sums=('SKIP'
+            'd373d018aa64a892b653c9bfebb59f2dac85cd36de1d77632460bc27e6da20c5'
+            '7e29b00193d267067d6c0c0f8046728ee8407a3befea428d088d90d75a5b0988'
             'c37d4cfa4801eccbd769fddaebb2115d54faa49a5b7bc0f305f563e3cefd9bd8'
             'd60d164e24fdcf6532133b8ea43c77a201e4b9e9dbc396187b58d51d8590ef52')
 
+prepare() {
+  # Keep first-run installation in the app: resume interrupted bootstraps,
+  # retain the matching source seed, and pause backend deadlines during setup.
+  patch -d "${srcdir}/hermes-agent" -p1 <"${srcdir}/graphical-bootstrap.patch"
+}
+
+build() {
+  cd "${srcdir}/hermes-agent"
+  export GITHUB_SHA="${_commit}"
+  export GITHUB_REF_NAME=main
+  npm ci
+  cd apps/desktop
+  npm run pack
+}
+
+check() {
+  cd "${srcdir}/hermes-agent/apps/desktop"
+  npx vitest run electron/bootstrap-request.test.ts electron/bootstrap-runner.test.ts \
+    src/lib/backend-boot-timeout.test.ts src/lib/with-timeout.test.ts \
+    src/app/gateway/hooks/use-gateway-boot.test.tsx src/store/connections.test.ts
+}
+
 package() {
-  install -Dm644 "${srcdir}/install-${_commit}.sh" \
+  local seed="${pkgdir}/usr/share/${pkgname}/seed"
+
+  # A fresh shallow clone includes every tracked file and its real Git objects,
+  # with no build paths, alternates or npm output. GUI bootstrap advances main.
+  git clone --no-local --depth 1 "${srcdir}/hermes-agent" "$seed"
+  git -C "$seed" branch -M main
+  git -C "$seed" remote remove origin
+  git -C "$seed" remote add origin "${url}.git"
+  git -C "$seed" update-ref refs/remotes/origin/main HEAD
+  git -C "$seed" branch --set-upstream-to=origin/main main
+  # Reflogs describe the build checkout and have no meaning on the user machine.
+  rm -rf "$seed/.git/logs"
+  printf '%s\n' "${_commit}" >"$seed/.git/omarchy-desktop-seed"
+  install -dm755 "$seed/apps/desktop/release"
+  cp -a "${srcdir}/hermes-agent/apps/desktop/release/linux-unpacked" \
+    "$seed/apps/desktop/release/"
+  chmod 0755 "$seed/apps/desktop/release/linux-unpacked/chrome-sandbox"
+
+  install -Dm644 "${srcdir}/hermes-agent/scripts/install.sh" \
     "${pkgdir}/usr/share/${pkgname}/install.sh"
-  install -Dm644 "${srcdir}/LICENSE-${_commit}" \
+  install -Dm644 "${srcdir}/hermes-agent/LICENSE" \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 "$seed/apps/desktop/release/linux-unpacked/LICENSE.electron.txt" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.electron.txt"
   install -Dm755 "${srcdir}/hermes-desktop.sh" "${pkgdir}/usr/bin/${pkgname}"
 
   # Native registration uses hermes.desktop but omits URI handling. Keep the
