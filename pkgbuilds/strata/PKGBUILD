@@ -1,5 +1,5 @@
 pkgname=strata
-pkgver=0.10.0
+pkgver=0.11.2
 pkgrel=1
 pkgdesc='Fast, keyboard-first file manager for modern Linux desktops'
 arch=('x86_64' 'aarch64')
@@ -38,7 +38,7 @@ conflicts=('strata-git')
 options=('!debug' '!lto')
 
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('01ea2676a0c59fac5daa0962ed6e721861bafd478b19cf5d9afaab6823175fe8')
+sha256sums=('cfc8b1c3a9a5fde518c5862b58af7722e942b5f394c60fd53822dd642c1f30a0')
 
 prepare() {
   cd "$pkgname-$pkgver"
@@ -84,6 +84,10 @@ package() {
     "$pkgdir/usr/share/applications/io.github.lgse.Strata.desktop"
   install -Dm644 data/icons/scalable/apps/io.github.lgse.Strata.svg \
     "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.github.lgse.Strata.svg"
+  # Payload for the app's per-user FileManager1 opt-in; upstream's own
+  # packaging stages it here, not in /usr/share/dbus-1.
+  install -Dm644 data/io.github.lgse.Strata.FileManager1.service \
+    "$pkgdir/usr/share/strata/io.github.lgse.Strata.FileManager1.service"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 THIRD_PARTY_LICENSES.md \
     "$pkgdir/usr/share/licenses/$pkgname/THIRD_PARTY_LICENSES.md"
