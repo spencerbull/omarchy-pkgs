@@ -43,18 +43,13 @@ runtime="$hermes_home/hermes-agent"
 native="$runtime/apps/desktop/release/linux-unpacked/Hermes"
 
 if [[ -x $native && -x $runtime/venv/bin/hermes ]]; then
-  if (( $# == 0 )); then
-    if (( ${#platform_flags[@]} )); then
-      export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"
-    fi
-    exec "$runtime/venv/bin/hermes" desktop --skip-build
-  else
-    # The upstream CLI does not accept Electron arguments or hermes:// URLs.
-    if unshare --user --map-root-user true 2>/dev/null; then
-      platform_flags+=(--disable-setuid-sandbox)
-    fi
-    exec "$native" "${platform_flags[@]}" "$@"
+  # Use the namespace sandbox without asking the CLI to make a user-writable
+  # helper setuid-root. Keep the same launch path for menu entries and URLs.
+  if ! timeout 5 unshare --user --map-root-user true 2>/dev/null; then
+    echo "Hermes Desktop requires working unprivileged user namespaces for its sandbox." >&2
+    exit 1
   fi
+  exec "$native" --disable-setuid-sandbox "${platform_flags[@]}" "$@"
 else
   exec /opt/hermes-desktop/Hermes "${platform_flags[@]}" "$@"
 fi

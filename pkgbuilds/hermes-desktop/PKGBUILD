@@ -5,7 +5,7 @@
 
 pkgname=hermes-desktop
 pkgver=2026.8.31
-pkgrel=3
+pkgrel=4
 pkgdesc='Native desktop shell for Hermes Agent'
 arch=('x86_64')
 url='https://github.com/NousResearch/hermes-agent'
@@ -75,11 +75,11 @@ source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz
         'runtime.patch'
         'runtime-test.py')
 sha256sums=('78fb3ff707ec1d17044b875ecac8bef28aa39d44242824f6871ca40afe7bf217'
-            '93540bbd8e3fccd132546c3e8f7da16eb04e67c20bbfe84034a2736c00e6d49d'
+            '7324b1d5e7db16c6169dd9e685f4093925c4a8c0568cb7ce416ac734f3336606'
             '3ef685bfcf366776b025d26c37d32854d8d4aa2023b2bd07c8e08b001ef1e8c4'
             'd60d164e24fdcf6532133b8ea43c77a201e4b9e9dbc396187b58d51d8590ef52'
-            'cd544605f3b6ed397a829244e4f4d08f2d28a3a2f56edff7d3287b55bdf606b2'
-            '99caf1ef09c3ac88892ee674ebe92faa916c225fb938fe6796cf04b4e4ac397f')
+            '03b67e26c234c797a6b1d4c9f34a57502dba37f462540e47ce6c88f6ea79302a'
+            '69bc57d04610567eca35679328668619fcd3f129ed099bf5e2a1f24d1f197de9')
 
 build() {
   cd "${srcdir}/${_srcdir}"
@@ -96,7 +96,7 @@ build() {
 }
 
 check() {
-  python "${srcdir}/runtime-test.py" "${srcdir}/${_srcdir}" "${srcdir}/runtime.patch"
+  python "${srcdir}/runtime-test.py" "${srcdir}/${_srcdir}" "${srcdir}/runtime.patch" "${srcdir}/hermes-desktop.sh"
 }
 
 package() {
@@ -109,7 +109,7 @@ package() {
 
   install -Dm644 "${srcdir}/${_srcdir}/scripts/install.sh" \
     "${pkgdir}/usr/share/${pkgname}/install.sh"
-  # Backport the upstream user-namespace fixes to this release's user runtime.
+  # Let the release's first updater relaunch with the user-namespace sandbox.
   install -Dm644 "${srcdir}/runtime.patch" "${pkgdir}/usr/share/${pkgname}/runtime.patch"
 
 
