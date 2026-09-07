@@ -1,13 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Hermes Desktop is a shell around a Hermes runtime, and it only works against
-# one built from its own commit. A CLI from PyPI is always a different release
-# -- PyPI trails the tags -- and the mismatch fails the app's readiness probe
-# with 401 Unauthorized. So keep it away from whatever `hermes` is on PATH,
-# which on Omarchy is the mise CLI installed for the terminal agent, and let
-# the app provision and manage its own runtime under ~/.hermes. That is the
-# arrangement upstream ships, and the only one that starts.
+# Use the runtime prepared by Omarchy rather than a separate CLI on PATH.
 export HERMES_DESKTOP_IGNORE_EXISTING=1
 
 # Chromium cannot reliably infer the Secret Service password-store backend
@@ -38,4 +32,29 @@ if [[ -n "${WAYLAND_DISPLAY:-}" || ${XDG_SESSION_TYPE:-} == wayland ]]; then
   done
 fi
 
-exec /opt/hermes-desktop/Hermes "${platform_flags[@]}" "$@"
+hermes_home=$(realpath -ms -- "${HERMES_HOME:-$HOME/.hermes}")
+parent=${hermes_home%/*}
+if [[ ${parent##*/} == [Pp][Rr][Oo][Ff][Ii][Ll][Ee][Ss] ]]; then
+  hermes_home=${parent%/*}
+  hermes_home=${hermes_home:-/}
+fi
+export HERMES_HOME="$hermes_home"
+runtime="$hermes_home/hermes-agent"
+native="$runtime/apps/desktop/release/linux-unpacked/Hermes"
+
+if [[ -x $native && -x $runtime/venv/bin/hermes ]]; then
+  if (( $# == 0 )); then
+    if (( ${#platform_flags[@]} )); then
+      export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"
+    fi
+    exec "$runtime/venv/bin/hermes" desktop --skip-build
+  else
+    # The upstream CLI does not accept Electron arguments or hermes:// URLs.
+    if unshare --user --map-root-user true 2>/dev/null; then
+      platform_flags+=(--disable-setuid-sandbox)
+    fi
+    exec "$native" "${platform_flags[@]}" "$@"
+  fi
+else
+  exec /opt/hermes-desktop/Hermes "${platform_flags[@]}" "$@"
+fi
