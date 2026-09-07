@@ -1,17 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
-export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-HERMES_HOME=$(realpath -ms "$HERMES_HOME")
-root="$HERMES_HOME/hermes-agent"
-marker="$root/.omarchy-hermes-desktop"
-installer=/usr/share/hermes-desktop/install.sh
-cli=("$root/venv/bin/python" "$root/hermes")
-
 die() {
   echo "Hermes: $*" >&2
   exit 1
 }
+
+HERMES_HOME=$(realpath -ms -- "${HERMES_HOME:-$HOME/.hermes}")
+# A profile session shares its parent home's installation and launchers.
+home_parent=${HERMES_HOME%/*}
+if [[ ${home_parent##*/} == "profiles" ]]; then
+  HERMES_HOME=${home_parent%/*}
+fi
+[[ $HERMES_HOME == /* && $HERMES_HOME != "/" ]] || die "Use a Hermes data directory other than /."
+export HERMES_HOME
+root="$HERMES_HOME/hermes-agent"
+marker="$root/.omarchy-hermes-desktop"
+installer=/usr/share/hermes-desktop/install.sh
+cli=("$root/venv/bin/python" "$root/hermes")
 
 desktop_executable() {
   local executable

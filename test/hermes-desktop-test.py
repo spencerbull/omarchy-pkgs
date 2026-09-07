@@ -95,7 +95,7 @@ fi
 ''')
         self.write(self.base / 'gui', '''#!/usr/bin/env python3
 import json,os,sys,time
-json.dump({'pid':os.getpid(),'args':sys.argv[1:],'root':os.environ['HERMES_DESKTOP_HERMES_ROOT'],'node':os.environ.get('ELECTRON_RUN_AS_NODE'),'password':os.environ['HERMES_DESKTOP_PASSWORD_STORE']},open(os.environ['TEST_OUTPUT'],'w'))
+json.dump({'pid':os.getpid(),'args':sys.argv[1:],'root':os.environ['HERMES_DESKTOP_HERMES_ROOT'],'home':os.environ['HERMES_HOME'],'node':os.environ.get('ELECTRON_RUN_AS_NODE'),'password':os.environ['HERMES_DESKTOP_PASSWORD_STORE']},open(os.environ['TEST_OUTPUT'],'w'))
 if os.environ.get('TEST_GUI_WAIT'): time.sleep(30)
 ''')
         self.write(self.bin / 'unshare', '#!/bin/bash\nexit 0\n')
@@ -125,6 +125,71 @@ if os.environ.get('TEST_GUI_WAIT'): time.sleep(30)
         self.assertLess(stages.index('desktop'), stages.index('path'))
         self.assertEqual((self.root / '.omarchy-hermes-desktop').read_text(), 'ready\n')
         self.assertEqual(subprocess.check_output(['git','-C',str(self.root),'status','--porcelain'],env=self.env),b'')
+
+    def test_profile_setup_installs_in_machine_home(self):
+        profile = self.home / '.hermes/profiles/coder'
+        self.write(profile / 'config.yaml', 'profile data\n')
+        self.env['HERMES_HOME'] = str(profile) + '/./'
+        self.install()
+        self.assertEqual((self.root / '.omarchy-hermes-desktop').read_text(), 'ready\n')
+        self.assertEqual(list(profile.iterdir()), [profile / 'config.yaml'])
+        self.assertEqual((profile / 'config.yaml').read_text(), 'profile data\n')
+
+    def test_profile_warm_check_install_and_launch_share_machine_runtime(self):
+        self.install()
+        before = self.log.read_bytes()
+        self.env['HERMES_HOME'] = str(self.home / '.hermes/profiles/coder')
+        self.run_launcher('--check')
+        self.run_launcher('--install')
+        self.run_launcher('hermes://profile')
+        observed = json.loads(self.output.read_text())
+        self.assertEqual(observed['root'], str(self.root))
+        self.assertEqual(observed['home'], str(self.root.parent))
+        self.assertEqual(self.log.read_bytes(), before)
+
+    def test_custom_home_profile_uses_its_own_parent_root(self):
+        custom_home = self.base / 'custom data'
+        self.root = custom_home / 'hermes-agent'
+        self.env['HERMES_HOME'] = str(custom_home / 'profiles/coder')
+        self.install()
+        self.run_launcher()
+        observed = json.loads(self.output.read_text())
+        self.assertEqual(observed['root'], str(self.root))
+        self.assertEqual(observed['home'], str(custom_home))
+        self.assertFalse((self.home / '.hermes').exists())
+        self.assertFalse((custom_home / 'profiles').exists())
+
+    def test_custom_home_with_profiles_ancestor_is_preserved(self):
+        custom_home = self.base / 'profiles/team/custom data'
+        self.root = custom_home / 'hermes-agent'
+        self.env['HERMES_HOME'] = str(custom_home)
+        self.install()
+        self.run_launcher()
+        observed = json.loads(self.output.read_text())
+        self.assertEqual(observed['root'], str(self.root))
+        self.assertEqual(observed['home'], str(custom_home))
+
+    def test_profile_resolution_preserves_symlink_home_spelling(self):
+        target = self.base / 'physical data'
+        target.mkdir()
+        alias = self.base / 'data alias'
+        alias.symlink_to(target, target_is_directory=True)
+        self.root = alias / 'hermes-agent'
+        self.env['HERMES_HOME'] = str(alias / 'profiles/coder')
+        self.install()
+        self.run_launcher()
+        observed = json.loads(self.output.read_text())
+        self.assertEqual(observed['root'], str(self.root))
+        self.assertEqual(observed['home'], str(alias))
+        self.assertTrue(alias.is_symlink())
+
+    def test_filesystem_root_home_is_rejected_before_mutation(self):
+        self.write(self.bin / 'mkdir', '#!/bin/bash\nprintf called >> "$TEST_LOG"\nexit 42\n')
+        for home in ['/', '/profiles/coder', '/profiles/coder/./']:
+            with self.subTest(home=home):
+                result = self.run_launcher('--install', ok=False, HERMES_HOME=home)
+                self.assertIn('Use a Hermes data directory other than /.', result.stdout)
+                self.assertFalse(self.log.exists())
 
     def test_interrupted_clone_stays_aside_and_retry_succeeds(self):
         self.run_launcher('--install', ok=False, FAIL_PARTIAL_CLONE='1')
