@@ -11,7 +11,7 @@ index e94dcf3456..0bc83f4d8b 100644
 @@ -81,6 +82,107 @@ test('existing checkout detection requires git metadata', () => {
    }
  })
- 
+
 +test
 +  .skipIf(process.platform === 'win32')
 +  .each([
@@ -115,7 +115,7 @@ index e94dcf3456..0bc83f4d8b 100644
 +
  test('fresh bootstrap args include the packaged commit pin', () => {
    const installStamp = { commit: 'a'.repeat(40), branch: 'main' }
- 
+
 diff --git a/apps/desktop/electron/bootstrap-runner.ts b/apps/desktop/electron/bootstrap-runner.ts
 index dee008ff5d..0633a28b1b 100644
 --- a/apps/desktop/electron/bootstrap-runner.ts
@@ -131,7 +131,7 @@ index dee008ff5d..0633a28b1b 100644
 @@ -958,6 +959,29 @@ async function runBootstrap(opts) {
          return { ok: false, cancelled: true }
        }
- 
+
 +      // A package can supply the matching source alongside its desktop build.
 +      // Pulling this pristine seed to main would leave the source newer than the
 +      // running desktop and make the updater incorrectly report "up to date".
@@ -159,7 +159,7 @@ index dee008ff5d..0633a28b1b 100644
          scriptPath: scriptInfo.path,
          installerKind,
 diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
-index 5116cdb7bc..21f76b84bf 100644
+index 5116cdb7bc..151e6f6bf4 100644
 --- a/apps/desktop/electron/main.ts
 +++ b/apps/desktop/electron/main.ts
 @@ -80,6 +80,7 @@ import {
@@ -170,24 +170,72 @@ index 5116cdb7bc..21f76b84bf 100644
  import { runBootstrap } from './bootstrap-runner'
  import {
    BROWSER_WINDOW_HEIGHT,
-@@ -1577,7 +1578,8 @@ let bootstrapAbortController = null
+@@ -1576,8 +1577,9 @@ let bootstrapAbortController = null
+ // deleting the bootstrap marker, which stranded healthy installs whose only
  // problem was a transient backend error (#72166). Intent now lives here, so
  // repair can force the installer without destroying provenance about how the
- // install was created. Cleared once the reinstall is under way.
+-// install was created. Cleared once the reinstall is under way.
 -let bootstrapRepairRequested = false
++// install was created. Cleared only after the installer completes successfully.
 +let bootstrapRepairRequested = consumeBootstrapRequest(process.env)
 +const bootstrapSeedCommit = consumeBootstrapSeed(process.env)
  // Counter for in-flight repair attempts. Reset on a clean boot completion
  // (see runBootstrap -> ensureRuntime resolve path). Each successive repair
  // in the same failure episode increments this; once it crosses
-@@ -5128,6 +5130,7 @@ async function ensureRuntime(backend) {
- 
+@@ -4950,7 +4952,7 @@ function resolveHermesBackend(backendArgs) {
+   //    do NOT write a bootstrap marker; the user did this themselves and we
+   //    don't want to take ownership of an install we didn't perform.
+   //    HERMES_DESKTOP_IGNORE_EXISTING=1 forces the bootstrap path for testing.
+-  if (process.env.HERMES_DESKTOP_IGNORE_EXISTING !== '1') {
++  if (!bootstrapRepairRequested && process.env.HERMES_DESKTOP_IGNORE_EXISTING !== '1') {
+     let hermesCommand = null
+     const hermesOverride = process.env.HERMES_DESKTOP_HERMES
+
+@@ -5021,7 +5023,7 @@ function resolveHermesBackend(backendArgs) {
+   // 5. Last-ditch: pip-installed hermes_cli module via system Python.
+   //    Same rationale as #4 -- the user installed this; we use it but don't
+   //    take ownership.
+-  const python = findSystemPython()
++  const python = bootstrapRepairRequested ? null : findSystemPython()
+
+   if (python) {
+     // Same smoke-test rationale as step 4: a system Python in the
+@@ -5121,13 +5123,14 @@ async function ensureRuntime(backend) {
+
+     bootstrapAbortController = new AbortController()
+
+-    // The repair request has been honoured by reaching the installer; clear it
+-    // so a later boot isn't forced through bootstrap again.
+-    bootstrapRepairRequested = false
++    // A late failure can leave an importable venv and CLI shim. Keep bootstrap
++    // intent through reset/reload retries until every installer stage succeeds.
++    bootstrapRepairRequested = true
+     bootstrapRepairAttempt = 0
+
      const bootstrapResult = await runBootstrap({
        installStamp: backend.installStamp,
 +      seedCommit: bootstrapSeedCommit,
        activeRoot: backend.activeRoot,
        sourceRepoRoot: SOURCE_REPO_ROOT,
        hermesHome: HERMES_HOME,
+@@ -5179,6 +5182,7 @@ async function ensureRuntime(backend) {
+       throw bootstrapError
+     }
+
++    bootstrapRepairRequested = false
+     rememberLog('[bootstrap] bootstrap complete; marker written. Re-resolving backend.')
+
+     // Re-resolve now that the install exists. The new resolution lands in
+@@ -15099,7 +15103,8 @@ ipcMain.handle('hermes:bootstrap:repair', async () => {
+   // to the normal restart branch, which just kills the current child
+   // and respawns it against the same venv. See #74874 — this is what
+   // breaks the infinite reinstall loop the user hit.
+-  bootstrapRepairRequested = repairDecision.hardReinstall
++  // A soft backend restart must not discard an unfinished installer attempt.
++  bootstrapRepairRequested ||= repairDecision.hardReinstall
+   bootstrapFailure = null
+   backendStartFailure = null
+   remoteReauthFailure = null
 diff --git a/apps/desktop/src/app/gateway/hooks/use-gateway-boot.test.tsx b/apps/desktop/src/app/gateway/hooks/use-gateway-boot.test.tsx
 index 58a4389fb8..6b2c20725f 100644
 --- a/apps/desktop/src/app/gateway/hooks/use-gateway-boot.test.tsx
@@ -195,7 +243,7 @@ index 58a4389fb8..6b2c20725f 100644
 @@ -1,7 +1,7 @@
  import { act, cleanup, render } from '@testing-library/react'
  import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
- 
+
 -import type { DesktopConnectionsRegistry } from '@/global'
 +import type { DesktopBootstrapEvent, DesktopConnectionsRegistry } from '@/global'
  import { createClientSessionState } from '@/lib/chat-runtime'
@@ -204,7 +252,7 @@ index 58a4389fb8..6b2c20725f 100644
 @@ -1230,6 +1230,44 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () =>
      expect($desktopBoot.get().error).toBeTruthy()
    })
- 
+
 +  it('initial installation can outlive the backend deadline without poisoning boot', async () => {
 +    let installing = true
 +    const listeners = new Set<(event: DesktopBootstrapEvent) => void>()
@@ -266,7 +314,7 @@ index f5ee2ca66c..510ce99af9 100644
 @@ -199,6 +200,8 @@ export function useGatewayBoot({
        return () => void (cancelled = true)
      }
- 
+
 +    const bootWaitAbort = new AbortController()
 +
      // Store-driven switches (Sessions switcher → selectConnection) commit
@@ -285,7 +333,7 @@ index f5ee2ca66c..510ce99af9 100644
 +          'Timed out reconnecting to Hermes backend',
 +          bootWaitAbort.signal
          )
- 
+
          if (!ownsSwitch()) {
 @@ -988,10 +992,11 @@ export function useGatewayBoot({
          // round-trip must not hang "Starting Hermes…" forever. Initial boot
@@ -300,10 +348,10 @@ index f5ee2ca66c..510ce99af9 100644
 +          'Timed out connecting to Hermes backend',
 +          bootWaitAbort.signal
          )
- 
+
          if (cancelled) {
 @@ -1147,6 +1152,7 @@ export function useGatewayBoot({
- 
+
      return () => {
        cancelled = true
 +      bootWaitAbort.abort()
@@ -317,7 +365,7 @@ index edd9764dd8..273bec98ac 100644
 @@ -779,6 +779,28 @@ describe('selectConnection', () => {
      expect($showAllProfiles.get()).toBe(true)
    })
- 
+
 +  it('bootstrap does not expire descriptor restoration and start a duplicate connection', async () => {
 +    vi.useFakeTimers()
 +
@@ -349,7 +397,7 @@ index 7951e3bbe2..46c24ce0d3 100644
 +++ b/apps/desktop/src/store/connections.ts
 @@ -1,8 +1,9 @@
  import { atom, computed } from 'nanostores'
- 
+
  import type { DesktopConnectionsRegistry } from '@/global'
 +import { withBackendBootTimeout } from '@/lib/backend-boot-timeout'
  import { persistStringRecord, storedStringRecord } from '@/lib/storage'
@@ -367,13 +415,13 @@ index 7951e3bbe2..46c24ce0d3 100644
 -// restore should stop waiting for it. Shared constant so the boot-class
 -// budgets can't drift apart (see with-timeout.ts).
 -const BOOT_DESCRIPTOR_WAIT_TIMEOUT_MS = BACKEND_BOOT_WAIT_TIMEOUT_MS
- 
+
  export { $connectionsRegistry } from '@/store/connection-registry-state'
- 
+
 @@ -170,9 +166,9 @@ function waitForInitialConnection(): Promise<void> {
      })
    })
- 
+
 -  return withTimeout(
 +  return withBackendBootTimeout(
      published,
@@ -449,6 +497,183 @@ index 0000000000..04d510594b
 +
 +  return typeof commit === 'string' && /^[0-9a-f]{40}$/.test(commit) && !/^0{40}$/.test(commit) ? commit : null
 +}
+diff --git a/apps/desktop/electron/bootstrap-retry-main-process.test.ts b/apps/desktop/electron/bootstrap-retry-main-process.test.ts
+new file mode 100644
+index 0000000000..230f269ebd
+--- /dev/null
++++ b/apps/desktop/electron/bootstrap-retry-main-process.test.ts
+@@ -0,0 +1,171 @@
++import assert from 'node:assert/strict'
++import fs from 'node:fs'
++import path from 'node:path'
++import vm from 'node:vm'
++
++import ts from 'typescript'
++import { expect, test, vi } from 'vitest'
++
++import { decideBootstrapRepair } from './bootstrap-repair-guard'
++import { consumeBootstrapRequest, consumeBootstrapSeed } from './bootstrap-request'
++
++// Execute the actual resolver, installer lifecycle, and IPC handlers without
++// importing main.ts's app/window side effects. Only process and installer I/O
++// are substituted; the retry state and handler ordering remain production code.
++const source = fs.readFileSync(new URL('./main.ts', import.meta.url), 'utf8')
++const parsed = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true)
++
++const variables = new Set([
++  'bootstrapFailure',
++  'backendStartFailure',
++  'remoteReauthFailure',
++  'bootstrapAbortController',
++  'bootstrapRepairRequested',
++  'bootstrapSeedCommit',
++  'bootstrapRepairAttempt',
++  'MAX_BOOTSTRAP_REPAIR_SOFT_ATTEMPTS'
++])
++
++const functions = new Set(['resolveHermesBackend', 'ensureRuntime'])
++const handlers = new Set(['hermes:bootstrap:reset', 'hermes:bootstrap:repair'])
++
++const selected = parsed.statements.filter(node => {
++  if (ts.isVariableStatement(node)) {
++    return node.declarationList.declarations.some(declaration => variables.has(declaration.name.getText(parsed)))
++  }
++
++  if (ts.isFunctionDeclaration(node)) {
++    return Boolean(node.name && functions.has(node.name.text))
++  }
++
++  if (ts.isExpressionStatement(node) && ts.isCallExpression(node.expression)) {
++    const call = node.expression
++    const channel = call.arguments[0]
++
++    return (
++      call.expression.getText(parsed) === 'ipcMain.handle' && ts.isStringLiteral(channel) && handlers.has(channel.text)
++    )
++  }
++
++  return false
++})
++
++assert.equal(selected.length, variables.size + functions.size + handlers.size)
++
++const code = ts.transpileModule(
++  selected.map(node => node.getText(parsed)).join('\n') +
++    `;\n({
++      start: () => ensureRuntime(resolveHermesBackend(['serve'])),
++      requested: () => bootstrapRepairRequested,
++      failed: () => Boolean(bootstrapFailure)
++    })`,
++  { compilerOptions: { target: ts.ScriptTarget.ES2022 } }
++).outputText
++
++function fixture({ requested = false, healthy = false, fallback = '' } = {}) {
++  let usable = healthy
++  const env: Record<string, string> = requested ? { HERMES_DESKTOP_BOOTSTRAP: '1' } : {}
++  const ipc = new Map<string, () => Promise<unknown>>()
++
++  const runBootstrap = vi.fn(async () => {
++    usable = true
++
++    return { ok: true }
++  })
++
++  const readState = () => ({ shouldUseActiveRuntime: usable, hasValidMarker: false })
++
++  const runtime = vm.runInNewContext(code, {
++    process: { env, platform: 'linux' },
++    path,
++    AbortController,
++    consumeBootstrapRequest,
++    consumeBootstrapSeed,
++    decideBootstrapRepair,
++    ACTIVE_HERMES_ROOT: '/tmp/bootstrap-fixture/hermes-agent',
++    HERMES_HOME: '/tmp/bootstrap-fixture',
++    VENV_ROOT: '/tmp/bootstrap-fixture/hermes-agent/venv',
++    SOURCE_REPO_ROOT: '/packaged',
++    INSTALL_STAMP: { commit: 'a'.repeat(40), branch: 'main' },
++    IS_PACKAGED: true,
++    IS_WINDOWS: false,
++    IS_WSL: false,
++    ipcMain: { handle: (channel: string, handler: () => Promise<unknown>) => ipc.set(channel, handler) },
++    activeRuntimeState: readState,
++    createActiveBackend: (args: string[]) => ({ kind: 'python', bootstrap: true, args }),
++    isHermesSourceRoot: () => true,
++    findOnPath: () => (fallback === 'PATH' ? '/tmp/native-hermes' : null),
++    findSystemPython: () => (fallback === 'Python' ? '/tmp/python' : null),
++    unwrapWindowsVenvHermesCommand: () => null,
++    looksLikeDesktopAppBinary: () => false,
++    isCommandScript: () => false,
++    shouldTrustHermesOverride: () => false,
++    verifyHermesCli: () => true,
++    canImportHermesCli: () => true,
++    getVenvPython: () => '/tmp/bootstrap-fixture/hermes-agent/venv/bin/python',
++    fileExists: () => true,
++    handOffWindowsBootstrapRecovery: async () => false,
++    advanceBootProgress: async () => {},
++    updateBootProgress: () => {},
++    rememberLog: () => {},
++    broadcastBootstrapEvent: () => {},
++    writeBootstrapMarker: () => {},
++    runBootstrap,
++    teardownPrimaryBackendAndWait: async () => {},
++    resetBootstrapSnapshot: () => {},
++    resetHermesConnection: () => {},
++    backendConnectionState: { getProcess: () => ({ exitCode: null, signalCode: null }) },
++    getFirstRunSetupGate: () => ({ resetForRetry: () => {}, resetForRepair: () => {} })
++  }) as { start: () => Promise<unknown>; requested: () => boolean; failed: () => boolean }
++
++  return { ...runtime, env, ipc, runBootstrap, makeUsable: () => void (usable = true) }
++}
++
++test.each(
++  ['reset', 'repair'].flatMap(handler =>
++    [false, true].flatMap(requested => ['failed', 'cancelled'].map(outcome => ({ handler, requested, outcome })))
++  )
++)(
++  'late $outcome survives $handler and retries setup (launcher request=$requested)',
++  async ({ handler, requested, outcome }) => {
++    const app = fixture({ requested, healthy: requested })
++    app.runBootstrap.mockImplementationOnce(async () => {
++      app.makeUsable() // venv/path succeeded; a later stage failed or was cancelled.
++
++      return outcome === 'cancelled'
++        ? { ok: false, cancelled: true }
++        : { ok: false, failedStage: 'complete', error: 'late fixture failure' }
++    })
++
++    expect(app.env).toEqual({})
++    await expect(app.start()).rejects.toMatchObject({ isBootstrapFailure: true })
++    expect(app.failed()).toBe(true)
++    await app.ipc.get(`hermes:bootstrap:${handler}`)!()
++    expect(app.failed()).toBe(false)
++    await app.start()
++    expect(app.runBootstrap).toHaveBeenCalledTimes(2)
++    expect(app.requested()).toBe(false)
++
++    // A subsequent ordinary restart must use the completed native runtime.
++    await app.start()
++    expect(app.runBootstrap).toHaveBeenCalledTimes(2)
++  }
++)
++
++test('a healthy native runtime with no marker keeps soft repairs out of the installer', async () => {
++  const app = fixture({ healthy: true })
++  await app.ipc.get('hermes:bootstrap:repair')!()
++  await app.start()
++  expect(app.requested()).toBe(false)
++  expect(app.runBootstrap).not.toHaveBeenCalled()
++})
++
++test.each(['PATH', 'Python'])(
++  'an explicit pending install cannot escape through a usable %s fallback',
++  async fallback => {
++    const app = fixture({ requested: true, fallback })
++    await app.start()
++    expect(app.runBootstrap).toHaveBeenCalledTimes(1)
++    expect(app.requested()).toBe(false)
++  }
++)
 diff --git a/apps/desktop/src/lib/backend-boot-timeout.test.ts b/apps/desktop/src/lib/backend-boot-timeout.test.ts
 new file mode 100644
 index 0000000000..bc483ba513

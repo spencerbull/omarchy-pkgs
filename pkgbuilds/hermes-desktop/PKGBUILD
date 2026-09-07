@@ -66,7 +66,7 @@ source=("hermes-agent::git+${url}.git#commit=${_commit}"
         'hermes-desktop.desktop'
         'hermes-desktop.png')
 sha256sums=('SKIP'
-            'd373d018aa64a892b653c9bfebb59f2dac85cd36de1d77632460bc27e6da20c5'
+            '242b0f19405c2b49fcc6b454e96c80c3ffb2e390fec58cfd72033efa8e24dcf1'
             '7e29b00193d267067d6c0c0f8046728ee8407a3befea428d088d90d75a5b0988'
             'c37d4cfa4801eccbd769fddaebb2115d54faa49a5b7bc0f305f563e3cefd9bd8'
             'd60d164e24fdcf6532133b8ea43c77a201e4b9e9dbc396187b58d51d8590ef52')
@@ -89,6 +89,7 @@ build() {
 check() {
   cd "${srcdir}/hermes-agent/apps/desktop"
   npx vitest run electron/bootstrap-request.test.ts electron/bootstrap-runner.test.ts \
+    electron/bootstrap-retry-main-process.test.ts \
     src/lib/backend-boot-timeout.test.ts src/lib/with-timeout.test.ts \
     src/app/gateway/hooks/use-gateway-boot.test.tsx src/store/connections.test.ts
 }
@@ -97,12 +98,13 @@ package() {
   local seed="${pkgdir}/usr/share/${pkgname}/seed"
 
   # A fresh shallow clone includes every tracked file and its real Git objects,
-  # with no build paths, alternates or npm output. GUI bootstrap advances main.
+  # with no build paths, alternates or npm output. Native updates advance main.
   git clone --no-local --depth 1 "${srcdir}/hermes-agent" "$seed"
   git -C "$seed" branch -M main
   git -C "$seed" remote remove origin
   git -C "$seed" remote add origin "${url}.git"
   git -C "$seed" update-ref refs/remotes/origin/main HEAD
+  git -C "$seed" remote set-head origin main
   git -C "$seed" branch --set-upstream-to=origin/main main
   # Reflogs describe the build checkout and have no meaning on the user machine.
   rm -rf "$seed/.git/logs"
@@ -111,6 +113,8 @@ package() {
   cp -a "${srcdir}/hermes-agent/apps/desktop/release/linux-unpacked" \
     "$seed/apps/desktop/release/"
   chmod 0755 "$seed/apps/desktop/release/linux-unpacked/chrome-sandbox"
+  git -C "$seed" fsck --full
+  [[ -z $(git -C "$seed" status --porcelain) ]]
 
   install -Dm644 "${srcdir}/hermes-agent/scripts/install.sh" \
     "${pkgdir}/usr/share/${pkgname}/install.sh"
