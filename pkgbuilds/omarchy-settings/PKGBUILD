@@ -197,6 +197,10 @@ package() {
     install -Dm644 default/systemd/user/app.slice.d/10-oomd.conf "$pkgdir/usr/lib/systemd/user/app.slice.d/10-oomd.conf"
     install -Dm644 default/systemd/zram-generator.conf.d/90-omarchy.conf "$pkgdir/usr/lib/systemd/zram-generator.conf.d/90-omarchy.conf"
   fi
+  # Older release pins still configure locate through install/config/locate.sh.
+  if [[ -f default/systemd/system/plocate-updatedb.service.d/10-omarchy.conf ]]; then
+    install -Dm644 default/systemd/system/plocate-updatedb.service.d/10-omarchy.conf "$pkgdir/usr/lib/systemd/system/plocate-updatedb.service.d/10-omarchy.conf"
+  fi
 
   # Same for applications/** — used by omarchy-refresh-applications,
   # omarchy-install-gaming-*, etc. to copy .desktop files into ~/.local/share.
