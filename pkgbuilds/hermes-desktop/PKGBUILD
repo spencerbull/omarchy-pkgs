@@ -5,7 +5,7 @@
 
 pkgname=hermes-desktop
 pkgver=2026.8.31
-pkgrel=2
+pkgrel=3
 pkgdesc='Native desktop shell for Hermes Agent'
 arch=('x86_64')
 url='https://github.com/NousResearch/hermes-agent'
@@ -75,11 +75,11 @@ source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz
         'runtime.patch'
         'runtime-test.py')
 sha256sums=('78fb3ff707ec1d17044b875ecac8bef28aa39d44242824f6871ca40afe7bf217'
-            '7324b1d5e7db16c6169dd9e685f4093925c4a8c0568cb7ce416ac734f3336606'
+            '094d5f3191109a80eea9f23053b78a2e00dbecf90d62d1ca04c8e48866251469'
             '3ef685bfcf366776b025d26c37d32854d8d4aa2023b2bd07c8e08b001ef1e8c4'
             'd60d164e24fdcf6532133b8ea43c77a201e4b9e9dbc396187b58d51d8590ef52'
             '03b67e26c234c797a6b1d4c9f34a57502dba37f462540e47ce6c88f6ea79302a'
-            '69bc57d04610567eca35679328668619fcd3f129ed099bf5e2a1f24d1f197de9')
+            '461e1120e7e6779f531c114d9926479e47fab79113d1b4646efea36bc771b3c5')
 
 build() {
   cd "${srcdir}/${_srcdir}"
@@ -130,11 +130,6 @@ package() {
   install -Dm644 "${pkgdir}/opt/${pkgname}/LICENSE.electron.txt" \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.electron.txt"
 
-  # Chromium's setuid sandbox is only needed where unprivileged user namespaces
-  # are unavailable; where they work, setuid root is the worse of the two.
-  if ! { [[ -L /proc/self/ns/user ]] && unshare --user true; }; then
-    chmod 4755 "${pkgdir}/opt/${pkgname}/chrome-sandbox"
-  else
-    chmod 0755 "${pkgdir}/opt/${pkgname}/chrome-sandbox"
-  fi
+  # The launcher requires the namespace sandbox on the target host.
+  chmod 0755 "${pkgdir}/opt/${pkgname}/chrome-sandbox"
 }
