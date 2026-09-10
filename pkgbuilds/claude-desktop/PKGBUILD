@@ -97,3 +97,5 @@ package() {
   # Debian package-policy files are not used on Arch Linux.
   rm -rf "${pkgdir}/usr/share/doc" "${pkgdir}/usr/share/lintian"
 }
+
+# CI verification touch for the build-changed workflow; not for merge.
