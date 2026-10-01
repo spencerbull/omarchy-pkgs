@@ -34,3 +34,6 @@ pkgbuilds/symfony-cli/symfony*
 pkgbuilds/yay/yay/
 .srcdest/
 .repo-host
+
+# Pinned source-tag signature required by the N1X kernel recipe.
+!pkgbuilds/linux-n1x/Ubuntu-nvidia-7.0-7.0.0-1018.18_24.04.1.tag.sig
