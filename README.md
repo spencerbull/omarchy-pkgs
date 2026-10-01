@@ -1,3 +1,5 @@
+> N1X development branch: see [N1X.md](N1X.md) for the matching repositories, build instructions, and hardware status.
+
 # Omarchy Package Repository
 
 Build system for the Omarchy Package Repository. Builds PKGBUILDs from local sources and AUR, signs them, and syncs to production.
